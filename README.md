@@ -4,7 +4,7 @@ Ethereum 区块链交易构造 gRPC 服务，提供地址验证、余额检查�
 
 ## 概述
 
-![服务架构示意图](docs/images/txbuilder-ethereum-architecture.png)
+![服务架构示意图](docs/images/txbuilder-architecture.png)
 
 **职责说明**：
 - **txbuilder-ethereum**：负责 Ethereum 区块链的所有细节（EIP-1559 交易构造、RLP 编码、JSON-RPC 调用）
