@@ -1,0 +1,19 @@
+[chain]
+chain_code = "ethereum"
+rpc_url = "https://rpc.sepolia.org"
+chain_id = 11155111
+
+[grpc]
+host = "127.0.0.1"
+port = 50052
+
+[log]
+rotation = true
+file_path = ""
+max_size_mb = 100
+max_backups = 10
+max_age = 30
+compress = true
+format = "terminal"
+verbosity = 3
+vmodule = ""

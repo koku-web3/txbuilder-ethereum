@@ -1,0 +1,81 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+# golangci-lint 是一个 Go 语言的综合 lint 工具，.golangci.yml 是它的配置文件。
+# 它集成了10多种 linter，可以一次性检测：
+
+# 安装方法：
+# go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+# 使用方式：
+# 本地运行检查 golangci-lint run ./...
+
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    # Go 官方
+    - gofmt          # 代码格式
+    - govet          # 静态分析
+    - errcheck       # 错误检查
+    - staticcheck    # 静态分析
+    - unused         # 未使用变量/函数检查
+    - gosimple       # 简化建议
+    - ineffassign    # 无效赋值
+    - typecheck      # 类型检查
+    - copyloopvar    # 循环中复制 slice/map
+
+    # 第三方
+    - gosec          # 安全扫描
+    - prealloc       # 预分配建议
+    - unconvert      # 不必要的类型转换
+    - dupl           # 代码重复检测
+    - goconst        # 重复字符串常量
+    - gocyclo        # 圈复杂度
+    - misspell       # 拼写检查
+    - nakedret       # 裸 return
+    - predeclared    # 预声明标识符
+    - whitespace     # 空格问题
+
+linters-settings:
+  gocyclo:
+    min-complexity: 30
+
+  dupl:
+    threshold: 150
+
+  goconst:
+    min-len: 10
+    min-occurrences: 3
+
+  gosec:
+    excludes:
+      - G104  # 未检查的错误返回值
+      - G115  # 整数溢出转换（安全范围内的类型转换）
+      - G118  # Goroutine 使用 context.Background（服务关闭时需要）
+      - G302  # 日志文件需要被其他进程读取，用 0644 合理
+      - G304  # 文件路径来自配置变量（loader 场景合理）
+      - G404  # 可接受弱随机数
+
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment
+
+  gofmt:
+    simplify: true
+
+  misspell:
+    locale: US
+
+  nakedret:
+    max-func-lines: 30
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 50
+  max-same-issues: 10

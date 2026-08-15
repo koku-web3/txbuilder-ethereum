@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# pre-commit 是一个本地 Git Hook，在你执行 git commit 之前自动运行检查。
+# 目的是在代码进入版本库之前catch问题，避免有问题的代码被提交。
+
+# Pre-commit hook for Go projects
+# 安装方法:
+# 方式一：cd 到 Git 仓库目录，执行 git config core.hooksPath .githooks 
+#       验证是否配置成功：
+#       git config core.hooksPath
+#       输出: .githooks
+# 方式二：cp .githooks/pre-commit .git/hooks/ && chmod +x .git/hooks/pre-commit
+
+
+set -e
+
+echo "Running pre-commit checks..."
+
+# 1. 检查代码格式
+echo "Checking code format..."
+if [ -n "$(gofmt -l .)" ]; then
+    echo "ERROR: The following files are not formatted correctly:"
+    gofmt -l .
+    echo ""
+    echo "Run 'gofmt -w .' to format them"
+    exit 1
+fi
+
+# 2. 运行 go vet
+echo "Running go vet..."
+if ! go vet ./... 2>&1; then
+    echo "ERROR: go vet failed"
+    exit 1
+fi
+
+# 3. 运行测试
+echo "Running tests..."
+if ! go test ./... 2>&1; then
+    echo "ERROR: tests failed"
+    exit 1
+fi
+
+echo "All pre-commit checks passed!"

@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package chain;
+
+option go_package = "github.com/koku-web3/txbuilder-ethereum/grpc;grpc";
+
+// TxBuilder service provides transaction construction APIs
+service TxBuilder {
+    // Verify if an address is valid
+    rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
+
+    // Verify if a contract address is valid
+    rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractAddressResponse);
+
+    // Check if the balance is sufficient for a transfer
+    rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficientBalanceResponse);
+
+    // Build unsigned transaction raw data for signing
+    rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse);
+
+    // Broadcast a signed transaction to the network
+    rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
+}
+
+// Common request with trace ID
+message RequestWithTraceId {
+    string trace_id = 1;
+}
+
+// VerifyAddress
+message VerifyAddressRequest {
+    string trace_id = 1;
+    string address = 2;
+}
+
+message VerifyAddressResponse {
+    bool is_valid = 1;
+}
+
+// VerifyContractAddress
+message VerifyContractAddressRequest {
+    string trace_id = 1;
+    string address = 2;
+}
+
+message VerifyContractAddressResponse {
+    bool is_valid = 1;
+}
+
+// CheckSufficientBalance
+message CheckSufficientBalanceRequest {
+    string trace_id = 1;
+    string chain_code = 2;
+    string coin_id = 3;
+    bool is_basic_coin = 4;
+    string from_address = 5;
+    string amount = 6;
+    string contract = 7;
+}
+
+message CheckSufficientBalanceResponse {
+    bool is_sufficient = 1;
+}
+
+// BuildSignRawData
+message BuildSignRawDataRequest {
+    string biz_id = 1;
+    string chain_code = 2;
+    string coin_id = 3;
+    bool is_basic_coin = 4;
+    string coin_symbol = 5;
+    string from_address = 6;
+    string to_address = 7;
+    string amount = 8;
+    string contract = 9;
+}
+
+message BuildSignRawDataResponse {
+    string msg = 1;        // Keccak-256 hash of unsigned tx - message to sign
+    string raw_data = 2;   // Unsigned RLP encoded transaction (hex) - for Coordinator to sign
+}
+
+// TxBroadcast
+message TxBroadcastRequest {
+    string trace_id = 1;
+    string raw_data = 2;    // Signed RLP encoded transaction (hex)
+    string signature = 3;    // Signature (hex) - kept for compatibility, ignored
+}
+
+message TxBroadcastResponse {
+    bool success = 1;
+}
