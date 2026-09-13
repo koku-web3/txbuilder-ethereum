@@ -14,6 +14,7 @@ import (
 
 	log "github.com/koku-web3/logko"
 	"github.com/koku-web3/txbuilder-ethereum/internal/config"
+	"github.com/pkg/errors"
 )
 
 type RPCClient struct {
@@ -156,6 +157,13 @@ func (c *RPCClient) call(ctx context.Context, method string, params []interface{
 	return rpcResp.Result, nil
 }
 
+// BlockHeader 区块头信息（用于 EIP-1559 baseFee 计算）
+type BlockHeader struct {
+	GasLimit      uint64
+	GasUsed       uint64
+	BaseFeePerGas *big.Int
+}
+
 func (c *RPCClient) ChainId(ctx context.Context) (uint64, error) {
 	log.Debug("[RPCClient.ChainId] calling eth_chainId")
 
@@ -217,6 +225,200 @@ func (c *RPCClient) BlockNumber(ctx context.Context) (string, error) {
 	return blockNumber, nil
 }
 
+// GetBlockByNumber 获取指定区块的区块头信息（用于 EIP-1559 baseFee 计算）
+// tag 支持 "latest"、"earliest"、"pending" 或具体区块号
+func (c *RPCClient) GetBlockByNumber(ctx context.Context, tag string) (*BlockHeader, error) {
+	log.Debug("[RPCClient.GetBlockByNumber] calling eth_getBlockByNumber",
+		"tag", tag,
+	)
+
+	params := []interface{}{tag, false} // false = 返回完整区块对象（非完整交易）
+
+	result, err := c.call(ctx, "eth_getBlockByNumber", params)
+	if err != nil {
+		log.Error("[RPCClient.GetBlockByNumber] failed to get block",
+			"tag", tag,
+			"error", err,
+		)
+		return nil, err
+	}
+
+	type blockResponse struct {
+		GasLimit      string `json:"gasLimit"`
+		GasUsed       string `json:"gasUsed"`
+		BaseFeePerGas string `json:"baseFeePerGas"`
+	}
+
+	var block blockResponse
+	if err := json.Unmarshal(result, &block); err != nil {
+		log.Error("[RPCClient.GetBlockByNumber] failed to unmarshal block",
+			"result", string(result),
+			"error", err,
+		)
+		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+	}
+
+	gasLimit, err := parseHexToUint64(block.GasLimit)
+	if err != nil {
+		log.Error("[RPCClient.GetBlockByNumber] failed to parse gasLimit",
+			"gasLimit", block.GasLimit,
+			"error", err,
+		)
+		return nil, fmt.Errorf("failed to parse gasLimit: %w", err)
+	}
+
+	gasUsed, err := parseHexToUint64(block.GasUsed)
+	if err != nil {
+		log.Error("[RPCClient.GetBlockByNumber] failed to parse gasUsed",
+			"gasUsed", block.GasUsed,
+			"error", err,
+		)
+		return nil, fmt.Errorf("failed to parse gasUsed: %w", err)
+	}
+
+	baseFeePerGas := new(big.Int)
+	if block.BaseFeePerGas != "" {
+		baseFeePerGasHex := strings.TrimPrefix(block.BaseFeePerGas, "0x")
+		baseFeePerGas.SetString(baseFeePerGasHex, 16)
+	}
+
+	log.Debug("[RPCClient.GetBlockByNumber] got block header",
+		"tag", tag,
+		"gasLimit", gasLimit,
+		"gasUsed", gasUsed,
+		"baseFeePerGas", baseFeePerGas.String(),
+	)
+
+	return &BlockHeader{
+		GasLimit:      gasLimit,
+		GasUsed:       gasUsed,
+		BaseFeePerGas: baseFeePerGas,
+	}, nil
+}
+
+// MaxPriorityFeePerGas 获取当前网络建议的小费（maxPriorityFeePerGas）
+// 等同于 eth_maxPriorityFeePerGas RPC 方法
+func (c *RPCClient) MaxPriorityFeePerGas(ctx context.Context) (*big.Int, error) {
+	log.Debug("[RPCClient.MaxPriorityFeePerGas] calling eth_maxPriorityFeePerGas")
+
+	result, err := c.call(ctx, "eth_maxPriorityFeePerGas", []interface{}{})
+	if err != nil {
+		log.Error("[RPCClient.MaxPriorityFeePerGas] failed to get max priority fee",
+			"error", err,
+		)
+		return nil, err
+	}
+
+	var feeHex string
+	if err := json.Unmarshal(result, &feeHex); err != nil {
+		log.Error("[RPCClient.MaxPriorityFeePerGas] failed to unmarshal fee",
+			"result", string(result),
+			"error", err,
+		)
+		return nil, fmt.Errorf("failed to unmarshal maxPriorityFeePerGas: %w", err)
+	}
+
+	fee := new(big.Int)
+	feeHex = strings.TrimPrefix(feeHex, "0x")
+	fee.SetString(feeHex, 16)
+
+	log.Debug("[RPCClient.MaxPriorityFeePerGas] got max priority fee",
+		"maxPriorityFeePerGas", fee.String(),
+	)
+	return fee, nil
+}
+
+// SuggestGasTipCap 获取 GasTipCap (maxPriorityFeePerGas)
+// 即用户愿意支付给矿工/验证者的最大小费
+// 等同于调用 eth_maxPriorityFeePerGas
+func (c *RPCClient) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	log.Debug("[RPCClient.SuggestGasTipCap] suggesting gas tip cap")
+
+	// 直接复用 MaxPriorityFeePerGas 的结果
+	tipCap, err := c.MaxPriorityFeePerGas(ctx)
+	if err != nil {
+		log.Error("[RPCClient.SuggestGasTipCap] failed to get tip cap",
+			"error", err,
+		)
+		return nil, errors.Wrap(err, "failed to get gas tip cap")
+	}
+
+	log.Debug("[RPCClient.SuggestGasTipCap] suggested gas tip cap",
+		"gasTipCap", tipCap.String(),
+	)
+	return tipCap, nil
+}
+
+// SuggestGasFeeCap 获取 GasFeeCap (maxFeePerGas)
+// 计算公式: maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas
+// 参考 EIP-1559 文档中的计算方式
+func (c *RPCClient) SuggestGasFeeCap(ctx context.Context) (*big.Int, error) {
+	log.Debug("[RPCClient.SuggestGasFeeCap] suggesting gas fee cap")
+
+	// Step 1: 获取最新区块，计算下一区块的 baseFee
+	block, err := c.GetBlockByNumber(ctx, "latest")
+	if err != nil {
+		log.Error("[RPCClient.SuggestGasFeeCap] failed to get block",
+			"error", err,
+		)
+		return nil, errors.Wrap(err, "failed to get latest block for baseFee")
+	}
+
+	// 检查是否为 EIP-1559 链（baseFeePerGas 必须大于 0）
+	if block.BaseFeePerGas.Cmp(big.NewInt(0)) == 0 {
+		log.Error("[RPCClient.SuggestGasFeeCap] chain does not support EIP-1559 (baseFeePerGas is 0)")
+		return nil, errors.New("chain does not support EIP-1559")
+	}
+
+	// Step 2: EIP-1559 baseFee 计算公式
+	parentGasTarget := block.GasLimit / 2
+	var baseFee *big.Int
+
+	if block.GasUsed == parentGasTarget {
+		baseFee = block.BaseFeePerGas
+	} else if block.GasUsed > parentGasTarget {
+		// gas 用多了，费用上涨
+		diff := block.GasUsed - parentGasTarget
+		num := new(big.Int).Mul(block.BaseFeePerGas, new(big.Int).SetUint64(diff))
+		num.Div(num, new(big.Int).SetUint64(parentGasTarget))
+		num.Div(num, big.NewInt(8))
+		if num.Cmp(big.NewInt(1)) < 0 {
+			num = big.NewInt(1)
+		}
+		baseFee = new(big.Int).Add(block.BaseFeePerGas, num)
+	} else {
+		// gas 用少了，费用降低
+		diff := parentGasTarget - block.GasUsed
+		num := new(big.Int).Mul(block.BaseFeePerGas, new(big.Int).SetUint64(diff))
+		num.Div(num, new(big.Int).SetUint64(parentGasTarget))
+		num.Div(num, big.NewInt(8))
+		baseFee = new(big.Int).Sub(block.BaseFeePerGas, num)
+		if baseFee.Cmp(big.NewInt(0)) < 0 {
+			baseFee = big.NewInt(0)
+		}
+	}
+
+	// Step 3: 获取 maxPriorityFeePerGas（小费）
+	maxPriorityFee, err := c.MaxPriorityFeePerGas(ctx)
+	if err != nil {
+		log.Warn("[RPCClient.SuggestGasFeeCap] failed to get maxPriorityFeePerGas, using fallback 2 gwei",
+			"error", err,
+		)
+		maxPriorityFee = big.NewInt(2000000000) // 2 gwei
+	}
+
+	// Step 4: 计算 maxFeePerGas = 2 * baseFee + maxPriorityFeePerGas
+	feeCap := new(big.Int).Mul(big.NewInt(2), baseFee)
+	feeCap.Add(feeCap, maxPriorityFee)
+
+	log.Debug("[RPCClient.SuggestGasFeeCap] suggested gas fee cap",
+		"baseFee", baseFee.String(),
+		"maxPriorityFeePerGas", maxPriorityFee.String(),
+		"gasFeeCap", feeCap.String(),
+	)
+	return feeCap, nil
+}
+
 func (c *RPCClient) GetBalance(ctx context.Context, address string) (*big.Int, error) {
 	log.Debug("[RPCClient.GetBalance] calling eth_getBalance",
 		"address", address,
@@ -253,9 +455,7 @@ func (c *RPCClient) GetBalance(ctx context.Context, address string) (*big.Int, e
 }
 
 func (c *RPCClient) GetTransactionCount(ctx context.Context, address string) (uint64, error) {
-	log.Debug("[RPCClient.GetTransactionCount] calling eth_getTransactionCount",
-		"address", address,
-	)
+	log.Debug("[RPCClient.GetTransactionCount] calling eth_getTransactionCount", "address", address)
 
 	result, err := c.call(ctx, "eth_getTransactionCount", []interface{}{address, "pending"})
 	if err != nil {
@@ -286,10 +486,7 @@ func (c *RPCClient) GetTransactionCount(ctx context.Context, address string) (ui
 		return 0, err
 	}
 
-	log.Debug("[RPCClient.GetTransactionCount] got nonce",
-		"address", address,
-		"nonce", nonce,
-	)
+	log.Debug("[RPCClient.GetTransactionCount] got nonce", "address", address, "nonce", nonce)
 	return nonce, nil
 }
 
@@ -432,6 +629,13 @@ func (c *RPCClient) BroadcastRawTransaction(ctx context.Context, rawHex string) 
 	log.Debug("[RPCClient.BroadcastRawTransaction] calling eth_sendRawTransaction",
 		"raw_hex_length", len(rawHex),
 	)
+
+	// 广播的数据需要以 0x 开头，如果rawHex非 0x 开头，补上
+	if !strings.HasPrefix(rawHex, "0x") {
+		rawHex = "0x" + rawHex
+	}
+
+	log.Info("broadcast data", "rawHex", rawHex)
 
 	result, err := c.call(ctx, "eth_sendRawTransaction", []interface{}{rawHex})
 	if err != nil {

@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
+	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/koku-web3/txbuilder-ethereum/grpc"
@@ -141,8 +144,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 			req: &grpc.CheckSufficientBalanceRequest{
 				TraceId:     "",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				Amount:      "1000000000000000",
 			},
@@ -153,20 +155,18 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 			req: &grpc.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				Amount:      "1000000000000000",
 			},
 			wantErr: true,
 		},
 		{
-			name: "missing coin_id",
+			name: "missing coin",
 			req: &grpc.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "",
-				IsBasicCoin: true,
+				Coin:        "",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				Amount:      "1000000000000000",
 			},
@@ -177,8 +177,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 			req: &grpc.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				FromAddress: "",
 				Amount:      "1000000000000000",
 			},
@@ -189,26 +188,14 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 			req: &grpc.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				Amount:      "",
 			},
 			wantErr: true,
 		},
-		{
-			name: "token without contract",
-			req: &grpc.CheckSufficientBalanceRequest{
-				TraceId:     "test-trace-id",
-				ChainCode:   "ethereum",
-				CoinId:      "usdt",
-				IsBasicCoin: false,
-				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-				Amount:      "1000000",
-				Contract:    "",
-			},
-			wantErr: true,
-		},
+		// 注意：当 contract 为空时，代码不会返回错误，而是只检查主链币余额
+		// 因此不需要 "token without contract" 的错误测试用例
 	}
 
 	for _, tt := range tests {
@@ -233,12 +220,11 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "missing biz_id",
+			name: "missing trace_id",
 			req: &grpc.BuildSignRawDataRequest{
-				BizId:       "",
+				TraceId:     "",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				CoinSymbol:  "ETH",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				ToAddress:   "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
@@ -249,10 +235,9 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		{
 			name: "invalid from_address",
 			req: &grpc.BuildSignRawDataRequest{
-				BizId:       "test-biz-id",
+				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				CoinSymbol:  "ETH",
 				FromAddress: "invalid_address",
 				ToAddress:   "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
@@ -263,10 +248,9 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		{
 			name: "invalid to_address",
 			req: &grpc.BuildSignRawDataRequest{
-				BizId:       "test-biz-id",
+				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				CoinSymbol:  "ETH",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				ToAddress:   "invalid_address",
@@ -277,10 +261,9 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		{
 			name: "amount with decimal point",
 			req: &grpc.BuildSignRawDataRequest{
-				BizId:       "test-biz-id",
+				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
-				CoinId:      "eth",
-				IsBasicCoin: true,
+				Coin:        "eth",
 				CoinSymbol:  "ETH",
 				FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 				ToAddress:   "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
@@ -347,5 +330,130 @@ func TestTxBroadcast_Validation(t *testing.T) {
 				t.Errorf("TxBroadcast() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestPadAddressTo32Bytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		wantLen int // 期望返回的 hex 字符串长度（64 = 32 字节）
+		wantErr bool
+	}{
+		{
+			name:    "standard 40-char address",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			wantLen: 64,
+			wantErr: false,
+		},
+		{
+			name:    "lowercase address",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			wantLen: 64,
+			wantErr: false,
+		},
+		{
+			name:    "without 0x prefix",
+			address: "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+			wantLen: 64,
+			wantErr: false,
+		},
+		{
+			name:    "case insensitive",
+			address: "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+			wantLen: 64,
+			wantErr: false,
+		},
+		{
+			name:    "invalid hex chars",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aaggggg",
+			wantLen: 64,
+			wantErr: true, // hex.DecodeString 会失败
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := padAddressTo32Bytes(tt.address)
+			if len(result) != tt.wantLen {
+				t.Errorf("padAddressTo32Bytes() len = %d, want %d", len(result), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestPadAddressTo32BytesBytes(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		wantLen int // 期望返回的字节数组长度（32）
+	}{
+		{
+			name:    "standard address",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			wantLen: 32,
+		},
+		{
+			name:    "lowercase",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			wantLen: 32,
+		},
+		{
+			name:    "without 0x prefix",
+			address: "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+			wantLen: 32,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := padAddressTo32BytesBytes(tt.address)
+			if len(result) != tt.wantLen {
+				t.Errorf("padAddressTo32BytesBytes() len = %d, want %d", len(result), tt.wantLen)
+			}
+
+			// 验证前 12 字节是 0（地址是左补零的）
+			for i := 0; i < 12; i++ {
+				if result[i] != 0 {
+					t.Errorf("padAddressTo32BytesBytes() padding[%d] = %x, want 0", i, result[i])
+				}
+			}
+
+			// 验证最后 20 字节与非 hex 前缀版本匹配
+			expectedAddr := strings.TrimPrefix(tt.address, "0x")
+			expectedBytes, _ := hex.DecodeString(expectedAddr)
+			for i, b := range expectedBytes {
+				if result[12+i] != b {
+					t.Errorf("padAddressTo32BytesBytes() addrBytes[%d] = %x, want %x", i, result[12+i], b)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildERC20TransferData(t *testing.T) {
+	to := "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+	amount := big.NewInt(7800000000000000000)
+
+	data := buildERC20TransferData(to, amount)
+
+	// 验证长度：4 字节 methodID + 32 字节地址 + 32 字节金额 = 68
+	if len(data) != 68 {
+		t.Errorf("buildERC20TransferData() len = %d, want 68", len(data))
+	}
+
+	// 验证 methodID
+	expectedMethodID := []byte{0xa9, 0x05, 0x9c, 0xbb}
+	for i, b := range expectedMethodID {
+		if data[i] != b {
+			t.Errorf("buildERC20TransferData() methodID[%d] = %x, want %x", i, data[i], b)
+		}
+	}
+
+	// 验证前 12 字节是 0（地址是左补零的）
+	for i := 0; i < 12; i++ {
+		if data[4+i] != 0 {
+			t.Errorf("buildERC20TransferData() padding[%d] = %x, want 0", i, data[4+i])
+		}
 	}
 }

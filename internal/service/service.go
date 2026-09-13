@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -9,8 +8,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	log "github.com/koku-web3/logko"
 	"github.com/koku-web3/txbuilder-ethereum/grpc"
 	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
@@ -21,23 +18,32 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	BaseCoinFixGas = 21000
+)
+
+// TxBuilderService Ethereum 交易构建服务
+// 负责验证地址、检查余额、构建交易签名数据、广播交易
 type TxBuilderService struct {
 	grpc.UnimplementedTxBuilderServer
-	rpc *ethereum.RPCClient
+	rpc *ethereum.RPCClient // Ethereum JSON-RPC 客户端
 }
 
+// GRPCServer gRPC 服务器封装
 type GRPCServer struct {
 	grpcSrv *ggrpc.Server
 	host    string
 	port    int
 }
 
+// NewTxBuilderService 创建交易构建服务实例
 func NewTxBuilderService() *TxBuilderService {
 	return &TxBuilderService{
 		rpc: ethereum.NewRPCClient(),
 	}
 }
 
+// NewGRPCServer 创建 gRPC 服务器实例
 func NewGRPCServer(host string, port int) *GRPCServer {
 	return &GRPCServer{
 		host: host,
@@ -45,6 +51,8 @@ func NewGRPCServer(host string, port int) *GRPCServer {
 	}
 }
 
+// Start 启动 gRPC 服务器，监听指定地址并处理请求
+// 使用 context 控制生命周期：ctx.Done() 时优雅关闭服务器
 func (s *GRPCServer) Start(ctx context.Context) error {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	lis, err := net.Listen("tcp", addr)
@@ -52,12 +60,15 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
 
+	// 创建 gRPC 服务器实例
 	s.grpcSrv = ggrpc.NewServer()
 	grpc.RegisterTxBuilderServer(s.grpcSrv, NewTxBuilderService())
+	// 注册 reflection 用于调试工具（如 grpcurl、Postman gRPC）
 	reflection.Register(s.grpcSrv)
 
 	log.Info("Starting gRPC server", "address", addr)
 
+	// 启动优雅关闭 goroutine：等待 context 取消信号
 	go func() {
 		<-ctx.Done()
 		log.Info("Shutting down gRPC server")
@@ -67,6 +78,8 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 	return s.grpcSrv.Serve(lis)
 }
 
+// verifyAddress 验证地址的通用逻辑
+// validateFn 是具体的验证函数（如 ValidateAddress 或 ValidateContractAddress）
 func (s *TxBuilderService) verifyAddress(ctx context.Context, methodName, traceId, address string, validateFn func(string) bool) (bool, error) {
 	log.Info("["+methodName+"] received request",
 		"trace_id", traceId,
@@ -99,6 +112,8 @@ func (s *TxBuilderService) verifyAddress(ctx context.Context, methodName, traceI
 	return isValid, nil
 }
 
+// VerifyAddress 验证普通以太坊地址格式（EOA 地址）
+// 返回地址是否合法（0x 开头 + 40 位十六进制字符）
 func (s *TxBuilderService) VerifyAddress(ctx context.Context, req *grpc.VerifyAddressRequest) (*grpc.VerifyAddressResponse, error) {
 	isValid, err := s.verifyAddress(ctx, "VerifyAddress", req.TraceId, req.Address, ethereum.ValidateAddress)
 	if err != nil {
@@ -107,6 +122,8 @@ func (s *TxBuilderService) VerifyAddress(ctx context.Context, req *grpc.VerifyAd
 	return &grpc.VerifyAddressResponse{IsValid: isValid}, nil
 }
 
+// VerifyContractAddress 验证智能合约地址格式
+// 智能合约地址与普通地址格式相同（0x 开头 + 40 位十六进制），但需要通过 eth_call 验证合约是否存在
 func (s *TxBuilderService) VerifyContractAddress(ctx context.Context, req *grpc.VerifyContractAddressRequest) (*grpc.VerifyContractAddressResponse, error) {
 	isValid, err := s.verifyAddress(ctx, "VerifyContractAddress", req.TraceId, req.Address, ethereum.ValidateContractAddress)
 	if err != nil {
@@ -115,12 +132,83 @@ func (s *TxBuilderService) VerifyContractAddress(ctx context.Context, req *grpc.
 	return &grpc.VerifyContractAddressResponse{IsValid: isValid}, nil
 }
 
+// CheckSufficientBalance 检查地址余额是否足够
+// - is_basic_coin=true: 检查 ETH 余额是否 >= 转账金额
+// - is_basic_coin=false: 先检查 ETH 余额是否足够支付 Gas，再检查 Token 余额是否 >= 转账金额
 func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc.CheckSufficientBalanceRequest) (*grpc.CheckSufficientBalanceResponse, error) {
+	if err := s.validateCheckSufficientBalance(req); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	log.Info("[CheckSufficientBalance] validation passed, checking balance", "trace_id", req.TraceId)
+
+	balance, err := s.getBasicCoinBalance(ctx, req.FromAddress)
+	if err != nil {
+		log.Error("[CheckSufficientBalance] failed to get basic coin balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get balance: %v", err)
+	}
+
+	log.Info("[CheckSufficientBalance] got basic coin balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "balance", balance.String())
+
+	amountInt, err := parseAmount(req.Amount)
+	if err != nil {
+		log.Warn("[CheckSufficientBalance] invalid amount format", "trace_id", req.TraceId, "amount", req.Amount, "error", err)
+		return nil, status.Error(codes.InvalidArgument, "invalid amount format")
+	}
+
+	isContract := req.Contract != ""
+	// 获取手续费
+	calldata := hex.EncodeToString(buildERC20TransferData(req.FromAddress, amountInt))
+	fee, err := s.getEip1559TxFee(ctx, isContract, req.FromAddress, req.Contract, calldata)
+	if err != nil {
+		log.Error("[CheckSufficientBalance] failed to get fee", "trace_id", req.TraceId, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get fee: %v", err)
+	}
+
+	log.Info("[CheckSufficientBalance] got fee", "trace_id", req.TraceId, "fee", fee.String())
+
+	isCoinSufficient, isTokenSufficient := false, false
+
+	isCoinSufficient = balance.Cmp(new(big.Int).Add(amountInt, fee)) >= 0
+
+	// 如果只是想知道主链币余额是否，直接返回
+	if !isContract {
+		log.Info("[CheckSufficientBalance] basic coin balance check result", "trace_id", req.TraceId, "balance", balance.String(), "required_amount", amountInt.String(), "is_coin_sufficient", isCoinSufficient)
+		return &grpc.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient}, nil
+	}
+
+	// 继续执行查询合约余额是否足够的逻辑
+	if !ethereum.ValidateContractAddress(req.Contract) {
+		return nil, status.Error(codes.InvalidArgument, "invalid contract format")
+	}
+
+	log.Info("[CheckSufficientBalance] checking token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract)
+
+	// 手续费是否足够
+	isCoinSufficient = balance.Cmp(fee) >= 0
+
+	log.Warn("[CheckSufficientBalance] ethereum fee", "trace_id", req.TraceId, "balance", balance.String(), "fee", fee.String())
+
+	tokenBalance, err := s.getTokenBalance(ctx, req.FromAddress, req.Contract)
+	if err != nil {
+		log.Error("[CheckSufficientBalance] failed to get token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get token balance: %v", err)
+	}
+
+	log.Info("[CheckSufficientBalance] got token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract, "token_balance", tokenBalance.String())
+
+	isTokenSufficient = tokenBalance.Cmp(amountInt) >= 0
+
+	log.Info("[CheckSufficientBalance] token balance check result", "trace_id", req.TraceId, "token_balance", tokenBalance.String(), "balance", amountInt.String(), "is_coin_sufficient", isCoinSufficient, "is_token_sufficient", isTokenSufficient)
+
+	return &grpc.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient, IsTokenSufficient: isTokenSufficient}, nil
+}
+
+func (*TxBuilderService) validateCheckSufficientBalance(req *grpc.CheckSufficientBalanceRequest) error {
 	log.Info("[CheckSufficientBalance] received request",
 		"trace_id", req.TraceId,
 		"chain_code", req.ChainCode,
-		"coin_id", req.CoinId,
-		"is_basic_coin", req.IsBasicCoin,
+		"coin", req.Coin,
 		"from_address", req.FromAddress,
 		"amount", req.Amount,
 		"contract", req.Contract,
@@ -130,7 +218,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 		log.Warn("[CheckSufficientBalance] missing trace_id",
 			"trace_id", req.TraceId,
 		)
-		return nil, status.Error(codes.InvalidArgument, "trace_id is required")
+		return status.Error(codes.InvalidArgument, "trace_id is required")
 	}
 	if req.ChainCode == "" || len(req.ChainCode) > 36 {
 		log.Warn("[CheckSufficientBalance] invalid chain_code",
@@ -138,15 +226,15 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 			"chain_code", req.ChainCode,
 			"chain_code_length", len(req.ChainCode),
 		)
-		return nil, status.Error(codes.InvalidArgument, "chain_code is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "chain_code is required and must be 1-36 characters")
 	}
-	if req.CoinId == "" || len(req.CoinId) > 36 {
+	if req.Coin == "" || len(req.Coin) > 36 {
 		log.Warn("[CheckSufficientBalance] invalid coin_id",
 			"trace_id", req.TraceId,
-			"coin_id", req.CoinId,
-			"coin_id_length", len(req.CoinId),
+			"coin_id", req.Coin,
+			"coin_id_length", len(req.Coin),
 		)
-		return nil, status.Error(codes.InvalidArgument, "coin_id is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "coin_id is required and must be 1-36 characters")
 	}
 	if req.FromAddress == "" || len(req.FromAddress) > 256 {
 		log.Warn("[CheckSufficientBalance] invalid from_address",
@@ -154,7 +242,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 			"from_address", req.FromAddress,
 			"from_address_length", len(req.FromAddress),
 		)
-		return nil, status.Error(codes.InvalidArgument, "from_address is required and must be 1-256 characters")
+		return status.Error(codes.InvalidArgument, "from_address is required and must be 1-256 characters")
 	}
 	if req.Amount == "" || len(req.Amount) > 64 {
 		log.Warn("[CheckSufficientBalance] invalid amount",
@@ -162,357 +250,106 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 			"amount", req.Amount,
 			"amount_length", len(req.Amount),
 		)
-		return nil, status.Error(codes.InvalidArgument, "amount is required and must be 1-64 characters")
+		return status.Error(codes.InvalidArgument, "amount is required and must be 1-64 characters")
 	}
-	if !req.IsBasicCoin && (req.Contract == "" || len(req.Contract) > 256) {
-		log.Warn("[CheckSufficientBalance] missing contract for token",
-			"trace_id", req.TraceId,
-			"is_basic_coin", req.IsBasicCoin,
-			"contract", req.Contract,
-		)
-		return nil, status.Error(codes.InvalidArgument, "contract is required when is_basic_coin is false")
-	}
-
-	log.Info("[CheckSufficientBalance] validation passed, checking balance",
-		"trace_id", req.TraceId,
-		"is_basic_coin", req.IsBasicCoin,
-	)
-
-	if req.IsBasicCoin {
-		log.Info("[CheckSufficientBalance] checking basic coin (ETH) balance",
-			"trace_id", req.TraceId,
-			"from_address", req.FromAddress,
-		)
-
-		balance, err := s.getBasicCoinBalance(ctx, req.FromAddress)
-		if err != nil {
-			log.Error("[CheckSufficientBalance] failed to get basic coin balance",
-				"trace_id", req.TraceId,
-				"from_address", req.FromAddress,
-				"error", err,
-			)
-			return nil, status.Errorf(codes.Internal, "failed to get balance: %v", err)
-		}
-
-		log.Info("[CheckSufficientBalance] got basic coin balance",
-			"trace_id", req.TraceId,
-			"from_address", req.FromAddress,
-			"balance", balance.String(),
-		)
-
-		amountInt, err := parseAmount(req.Amount)
-		if err != nil {
-			log.Warn("[CheckSufficientBalance] invalid amount format",
-				"trace_id", req.TraceId,
-				"amount", req.Amount,
-				"error", err,
-			)
-			return nil, status.Error(codes.InvalidArgument, "invalid amount format")
-		}
-
-		isSufficient := balance.Cmp(amountInt) >= 0
-
-		log.Info("[CheckSufficientBalance] basic coin balance check result",
-			"trace_id", req.TraceId,
-			"balance", balance.String(),
-			"required_amount", amountInt.String(),
-			"is_sufficient", isSufficient,
-		)
-
-		return &grpc.CheckSufficientBalanceResponse{IsSufficient: isSufficient}, nil
-	}
-
-	log.Info("[CheckSufficientBalance] checking token balance",
-		"trace_id", req.TraceId,
-		"from_address", req.FromAddress,
-		"contract", req.Contract,
-	)
-
-	baseFee, err := s.getBaseFee()
-	if err != nil {
-		log.Error("[CheckSufficientBalance] failed to get base fee",
-			"trace_id", req.TraceId,
-			"error", err,
-		)
-		return nil, status.Errorf(codes.Internal, "failed to get base fee: %v", err)
-	}
-
-	log.Info("[CheckSufficientBalance] got base fee",
-		"trace_id", req.TraceId,
-		"base_fee", baseFee.String(),
-	)
-
-	balance, err := s.getBasicCoinBalance(ctx, req.FromAddress)
-	if err != nil {
-		log.Error("[CheckSufficientBalance] failed to get ETH balance for fee",
-			"trace_id", req.TraceId,
-			"from_address", req.FromAddress,
-			"error", err,
-		)
-		return nil, status.Errorf(codes.Internal, "failed to get balance: %v", err)
-	}
-
-	log.Info("[CheckSufficientBalance] got ETH balance for fee check",
-		"trace_id", req.TraceId,
-		"balance", balance.String(),
-		"base_fee", baseFee.String(),
-	)
-
-	if balance.Cmp(baseFee) < 0 {
-		log.Warn("[CheckSufficientBalance] insufficient ETH for fee",
-			"trace_id", req.TraceId,
-			"balance", balance.String(),
-			"base_fee", baseFee.String(),
-		)
-		return &grpc.CheckSufficientBalanceResponse{IsSufficient: false}, nil
-	}
-
-	tokenBalance, err := s.getTokenBalance(ctx, req.FromAddress, req.Contract)
-	if err != nil {
-		log.Error("[CheckSufficientBalance] failed to get token balance",
-			"trace_id", req.TraceId,
-			"from_address", req.FromAddress,
-			"contract", req.Contract,
-			"error", err,
-		)
-		return nil, status.Errorf(codes.Internal, "failed to get token balance: %v", err)
-	}
-
-	log.Info("[CheckSufficientBalance] got token balance",
-		"trace_id", req.TraceId,
-		"from_address", req.FromAddress,
-		"contract", req.Contract,
-		"token_balance", tokenBalance.String(),
-	)
-
-	amountInt, err := parseAmount(req.Amount)
-	if err != nil {
-		log.Warn("[CheckSufficientBalance] invalid amount format",
-			"trace_id", req.TraceId,
-			"amount", req.Amount,
-			"error", err,
-		)
-		return nil, status.Error(codes.InvalidArgument, "invalid amount format")
-	}
-
-	isSufficient := tokenBalance.Cmp(amountInt) >= 0
-
-	log.Info("[CheckSufficientBalance] token balance check result",
-		"trace_id", req.TraceId,
-		"token_balance", tokenBalance.String(),
-		"required_amount", amountInt.String(),
-		"is_sufficient", isSufficient,
-	)
-
-	return &grpc.CheckSufficientBalanceResponse{IsSufficient: isSufficient}, nil
+	return nil
 }
 
-func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *grpc.BuildSignRawDataRequest) (*grpc.BuildSignRawDataResponse, error) {
+func (s *TxBuilderService) validateBuildSignRawData(req *grpc.BuildSignRawDataRequest) error {
 	log.Info("[BuildSignRawData] received request",
-		"biz_id", req.BizId,
+		"trace_id", req.TraceId,
 		"chain_code", req.ChainCode,
-		"coin_id", req.CoinId,
+		"coin", req.Coin,
 		"coin_symbol", req.CoinSymbol,
-		"is_basic_coin", req.IsBasicCoin,
 		"from_address", req.FromAddress,
 		"to_address", req.ToAddress,
 		"amount", req.Amount,
 		"contract", req.Contract,
 	)
 
-	if req.BizId == "" || len(req.BizId) > 36 {
-		log.Warn("[BuildSignRawData] invalid biz_id",
-			"biz_id", req.BizId,
-			"biz_id_length", len(req.BizId),
+	if req.TraceId == "" || len(req.TraceId) > 36 {
+		log.Warn("[BuildSignRawData] invalid trace_id",
+			"trace_id", req.TraceId,
+			"trace_id_length", len(req.TraceId),
 		)
-		return nil, status.Error(codes.InvalidArgument, "biz_id is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "trace_id is required and must be 1-36 characters")
 	}
 	if req.ChainCode == "" || len(req.ChainCode) > 36 {
 		log.Warn("[BuildSignRawData] invalid chain_code",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"chain_code", req.ChainCode,
 			"chain_code_length", len(req.ChainCode),
 		)
-		return nil, status.Error(codes.InvalidArgument, "chain_code is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "chain_code is required and must be 1-36 characters")
 	}
-	if req.CoinId == "" || len(req.CoinId) > 36 {
+	if req.Coin == "" || len(req.Coin) > 36 {
 		log.Warn("[BuildSignRawData] invalid coin_id",
-			"biz_id", req.BizId,
-			"coin_id", req.CoinId,
-			"coin_id_length", len(req.CoinId),
+			"trace_id", req.TraceId,
+			"coin", req.Coin,
+			"coin_length", len(req.Coin),
 		)
-		return nil, status.Error(codes.InvalidArgument, "coin_id is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "coin_id is required and must be 1-36 characters")
 	}
 	if req.CoinSymbol == "" || len(req.CoinSymbol) > 36 {
 		log.Warn("[BuildSignRawData] invalid coin_symbol",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"coin_symbol", req.CoinSymbol,
 			"coin_symbol_length", len(req.CoinSymbol),
 		)
-		return nil, status.Error(codes.InvalidArgument, "coin_symbol is required and must be 1-36 characters")
+		return status.Error(codes.InvalidArgument, "coin_symbol is required and must be 1-36 characters")
 	}
 	if req.FromAddress == "" || len(req.FromAddress) > 256 {
 		log.Warn("[BuildSignRawData] invalid from_address",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"from_address", req.FromAddress,
 			"from_address_length", len(req.FromAddress),
 		)
-		return nil, status.Error(codes.InvalidArgument, "from_address is required and must be 1-256 characters")
+		return status.Error(codes.InvalidArgument, "from_address is required and must be 1-256 characters")
 	}
 	if req.ToAddress == "" || len(req.ToAddress) > 256 {
 		log.Warn("[BuildSignRawData] invalid to_address",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"to_address", req.ToAddress,
 			"to_address_length", len(req.ToAddress),
 		)
-		return nil, status.Error(codes.InvalidArgument, "to_address is required and must be 1-256 characters")
+		return status.Error(codes.InvalidArgument, "to_address is required and must be 1-256 characters")
 	}
 	if req.Amount == "" || len(req.Amount) > 64 {
 		log.Warn("[BuildSignRawData] invalid amount",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"amount", req.Amount,
 			"amount_length", len(req.Amount),
 		)
-		return nil, status.Error(codes.InvalidArgument, "amount is required and must be 1-64 characters")
-	}
-	if !req.IsBasicCoin && (req.Contract == "" || len(req.Contract) > 256) {
-		log.Warn("[BuildSignRawData] missing contract for token",
-			"biz_id", req.BizId,
-			"is_basic_coin", req.IsBasicCoin,
-			"contract", req.Contract,
-		)
-		return nil, status.Error(codes.InvalidArgument, "contract is required when is_basic_coin is false")
+		return status.Error(codes.InvalidArgument, "amount is required and must be 1-64 characters")
 	}
 
 	if !ethereum.IsPureNumber(req.Amount) {
 		log.Warn("[BuildSignRawData] amount is not pure number",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"amount", req.Amount,
 		)
-		return nil, status.Error(codes.InvalidArgument, "amount must be a pure number")
+		return status.Error(codes.InvalidArgument, "amount must be a pure number")
 	}
 
 	if !ethereum.ValidateAddress(req.FromAddress) {
 		log.Warn("[BuildSignRawData] invalid from_address",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"from_address", req.FromAddress,
 		)
-		return nil, status.Error(codes.InvalidArgument, "invalid from_address")
+		return status.Error(codes.InvalidArgument, "invalid from_address")
 	}
 	if !ethereum.ValidateAddress(req.ToAddress) {
 		log.Warn("[BuildSignRawData] invalid to_address",
-			"biz_id", req.BizId,
+			"trace_id", req.TraceId,
 			"to_address", req.ToAddress,
 		)
-		return nil, status.Error(codes.InvalidArgument, "invalid to_address")
+		return status.Error(codes.InvalidArgument, "invalid to_address")
 	}
-
-	log.Info("[BuildSignRawData] validation passed, building transaction",
-		"biz_id", req.BizId,
-		"is_basic_coin", req.IsBasicCoin,
-	)
-
-	var msg, rawData string
-	var err error
-
-	if req.IsBasicCoin {
-		log.Info("[BuildSignRawData] building basic coin (ETH) transaction",
-			"biz_id", req.BizId,
-			"from_address", req.FromAddress,
-			"to_address", req.ToAddress,
-			"amount", req.Amount,
-		)
-
-		msg, rawData, err = s.buildBasicCoinTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount)
-	} else {
-		log.Info("[BuildSignRawData] building token transaction",
-			"biz_id", req.BizId,
-			"from_address", req.FromAddress,
-			"to_address", req.ToAddress,
-			"amount", req.Amount,
-			"contract", req.Contract,
-		)
-
-		msg, rawData, err = s.buildTokenTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount, req.Contract)
-	}
-
-	if err != nil {
-		log.Error("[BuildSignRawData] failed to build transaction",
-			"biz_id", req.BizId,
-			"is_basic_coin", req.IsBasicCoin,
-			"error", err,
-		)
-		return nil, status.Errorf(codes.Internal, "failed to build transaction: %v", err)
-	}
-
-	log.Info("[BuildSignRawData] transaction built successfully",
-		"biz_id", req.BizId,
-		"msg_length", len(msg),
-		"raw_data_length", len(rawData),
-	)
-
-	resp := &grpc.BuildSignRawDataResponse{
-		Msg:     msg,
-		RawData: rawData,
-	}
-
-	log.Info("[BuildSignRawData] returning response",
-		"biz_id", req.BizId,
-		"msg", msg,
-		"raw_data_length", len(rawData),
-	)
-
-	return resp, nil
+	return nil
 }
 
-func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *grpc.TxBroadcastRequest) (*grpc.TxBroadcastResponse, error) {
-	log.Info("[TxBroadcast] received request",
-		"trace_id", req.TraceId,
-		"raw_data_length", len(req.RawData),
-		"signature_length", len(req.Signature),
-	)
-
-	if req.TraceId == "" {
-		log.Warn("[TxBroadcast] missing trace_id",
-			"trace_id", req.TraceId,
-		)
-		return nil, status.Error(codes.InvalidArgument, "trace_id is required")
-	}
-	if req.RawData == "" {
-		log.Warn("[TxBroadcast] missing raw_data",
-			"trace_id", req.TraceId,
-		)
-		return nil, status.Error(codes.InvalidArgument, "raw_data is required")
-	}
-	if len(req.RawData) < 1 || len(req.RawData) > 4096 {
-		log.Warn("[TxBroadcast] invalid raw_data length",
-			"trace_id", req.TraceId,
-			"raw_data_length", len(req.RawData),
-		)
-		return nil, status.Error(codes.InvalidArgument, "raw_data must be 1-4096 characters")
-	}
-
-	log.Info("[TxBroadcast] validation passed, broadcasting transaction",
-		"trace_id", req.TraceId,
-	)
-
-	_, err := s.rpc.BroadcastRawTransaction(ctx, req.RawData)
-	if err != nil {
-		log.Error("[TxBroadcast] failed to broadcast transaction",
-			"trace_id", req.TraceId,
-			"error", err,
-		)
-		return nil, status.Errorf(codes.Internal, "failed to broadcast transaction: %v", err)
-	}
-
-	log.Info("[TxBroadcast] returning response",
-		"trace_id", req.TraceId,
-		"success", true,
-	)
-
-	return &grpc.TxBroadcastResponse{Success: true}, nil
-}
-
+// getBasicCoinBalance 获取 ETH 原生币余额
+// 调用 eth_getBalance RPC 方法
 func (s *TxBuilderService) getBasicCoinBalance(ctx context.Context, address string) (*big.Int, error) {
 	log.Debug("[getBasicCoinBalance] getting ETH balance",
 		"address", address,
@@ -535,14 +372,19 @@ func (s *TxBuilderService) getBasicCoinBalance(ctx context.Context, address stri
 	return balance, nil
 }
 
+// getTokenBalance 获取 ERC20 Token 余额
+// 通过 eth_call 调用合约的 balanceOf 方法（methodID: 0x70a08231）
+// 返回的余额是原始数值（未除以精度），需要根据 Token decimals 转换
 func (s *TxBuilderService) getTokenBalance(ctx context.Context, owner, contract string) (*big.Int, error) {
 	log.Debug("[getTokenBalance] getting token balance",
 		"owner", owner,
 		"contract", contract,
 	)
 
+	// ERC20 balanceOf 方法签名（Keccak-256("balanceOf(address)") 的前 4 字节）
 	methodID := "0x70a08231"
 
+	// 构建 call 数据：methodID + 32 字节补零地址
 	paddedOwner := padAddressTo32Bytes(owner)
 	data := methodID + paddedOwner
 
@@ -565,6 +407,7 @@ func (s *TxBuilderService) getTokenBalance(ctx context.Context, owner, contract 
 	}
 
 	result = strings.TrimPrefix(result, "0x")
+	// 返回结果可能是 "0x"（无余额）或长十六进制字符串（余额）
 	if len(result) < 64 {
 		log.Debug("[getTokenBalance] no balance or zero balance",
 			"owner", owner,
@@ -573,6 +416,7 @@ func (s *TxBuilderService) getTokenBalance(ctx context.Context, owner, contract 
 		return big.NewInt(0), nil
 	}
 
+	// 解析最后 64 位（256 bit uint256）的十六进制字符串为数字
 	balanceHex := result[len(result)-64:]
 	balance := new(big.Int)
 	balance.SetString(balanceHex, 16)
@@ -586,153 +430,82 @@ func (s *TxBuilderService) getTokenBalance(ctx context.Context, owner, contract 
 	return balance, nil
 }
 
-func (s *TxBuilderService) getBaseFee() (*big.Int, error) {
-	log.Debug("[getBaseFee] returning base fee")
-	return big.NewInt(1000000), nil
-}
+// getEip1559TxFee 返回预估的转账总手续费（单位：wei）
+// - 获取最新区块的 baseFeePerGas，按 EIP-1559 公式计算下一区块 baseFee
+// - 获取 maxPriorityFeePerGas（小费）
+// - 计算 perGasFee = 2 * baseFee + maxPriorityFeePerGas
+// - 原生币转账 gas = 21000；合约转账使用 EstimateGas * 1.2
+// - 最终返回 perGasFee * gas，即预估总手续费
+func (s *TxBuilderService) getEip1559TxFee(ctx context.Context, isContract bool, from, to, data string) (*big.Int, error) {
+	log.Debug("[getEip1559TxFee] calculating EIP-1559 fee", "is_contract", isContract, "from", from, "to", to)
 
-func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, to, amount string) (string, string, error) {
-	log.Debug("[buildBasicCoinTransaction] building ETH transfer",
-		"from", from,
-		"to", to,
-		"amount", amount,
+	// Step 1: 获取 EIP-1559 gas 费用建议（复用 RPC 层方法）
+	// gasFeeCap = 2 * baseFee + maxPriorityFeePerGas
+	gasFeeCap, err := s.rpc.SuggestGasFeeCap(ctx)
+	if err != nil {
+		log.Error("[getEip1559TxFee] failed to get gas fee cap", "error", err)
+		return nil, errors.Wrap(err, "failed to get gas fee cap")
+	}
+
+	// gasTipCap = maxPriorityFeePerGas（小费）
+	gasTipCap, err := s.rpc.SuggestGasTipCap(ctx)
+	if err != nil {
+		log.Warn("[getEip1559TxFee] failed to get gas tip cap, using fallback 2 gwei", "error", err)
+		gasTipCap = big.NewInt(2000000000) // 2 gwei fallback
+	}
+
+	log.Debug("[getEip1559TxFee] got gas fee cap",
+		"gas_fee_cap", gasFeeCap.String(),
+		"gas_tip_cap", gasTipCap.String(),
 	)
 
-	amountInt, err := parseAmount(amount)
-	if err != nil {
-		return "", "", errors.Wrap(err, "invalid amount")
-	}
-
-	nonce, err := s.rpc.GetTransactionCount(ctx, from)
-	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get nonce")
-	}
-
-	gasPrice, err := s.rpc.GasPrice(ctx)
-	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get gas price")
-	}
-
-	toAddress := common.HexToAddress(to)
-
-	tx := types.NewTransaction(
-		nonce,
-		toAddress,
-		amountInt,
-		21000,
-		gasPrice,
-		nil,
-	)
-
-	signer := types.NewEIP155Signer(big.NewInt(int64(s.rpc.ChainID)))
-	hash := signer.Hash(tx)
-
-	msg := hex.EncodeToString(hash.Bytes())
-
-	var rawData []byte
-	if tx.Type() == types.LegacyTxType {
-		buf := new(bytes.Buffer)
-		if err := tx.EncodeRLP(buf); err != nil {
-			return "", "", errors.Wrap(err, "failed to encode transaction")
+	// Step 2: 计算 gasLimit
+	var gas uint64
+	if isContract {
+		// 合约转账：使用 EstimateGas 预估，再加 20% 缓冲
+		estimated, err := s.rpc.EstimateGas(ctx, ethereum.CallArg{
+			From: from,
+			To:   to,
+			Data: data,
+		})
+		if err != nil {
+			log.Warn("[getEip1559TxFee] gas estimation failed, using default 100000", "error", err)
+			gas = 100000
+		} else {
+			gas = uint64(float64(estimated) * 1.2)
+			log.Debug("[getEip1559TxFee] estimated gas for contract", "estimated", estimated, "with_20pct_buffer", gas)
 		}
-		rawData = buf.Bytes()
-	}
-
-	log.Debug("[buildBasicCoinTransaction] transaction built",
-		"from", from,
-		"to", to,
-		"nonce", nonce,
-		"gas_price", gasPrice.String(),
-		"chain_id", s.rpc.ChainID,
-		"msg", msg,
-	)
-
-	return msg, hex.EncodeToString(rawData), nil
-}
-
-func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, amount, contract string) (string, string, error) {
-	log.Debug("[buildTokenTransaction] building ERC20 transfer",
-		"from", from,
-		"to", to,
-		"amount", amount,
-		"contract", contract,
-	)
-
-	amountInt, err := parseAmount(amount)
-	if err != nil {
-		return "", "", errors.Wrap(err, "invalid amount")
-	}
-
-	nonce, err := s.rpc.GetTransactionCount(ctx, from)
-	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get nonce")
-	}
-
-	gasPrice, err := s.rpc.GasPrice(ctx)
-	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get gas price")
-	}
-
-	data := buildERC20TransferData(to, amountInt)
-
-	gas, err := s.rpc.EstimateGas(ctx, ethereum.CallArg{
-		From: from,
-		To:   contract,
-		Data: string(data),
-	})
-	if err != nil {
-		log.Warn("[buildTokenTransaction] gas estimation failed, using default",
-			"error", err,
-		)
-		gas = 100000
 	} else {
-		gas = uint64(float64(gas) * 1.2)
+		// 原生币转账：固定 21000 gas
+		gas = BaseCoinFixGas
 	}
 
-	toAddress := common.HexToAddress(contract)
+	log.Debug("[getEip1559TxFee] gas limit", "gas", gas)
 
-	tx := types.NewTransaction(
-		nonce,
-		toAddress,
-		big.NewInt(0),
-		gas,
-		gasPrice,
-		data,
-	)
+	// Step 3: 计算总手续费 = gasFeeCap * gas
+	totalFee := new(big.Int).Mul(gasFeeCap, new(big.Int).SetUint64(gas))
 
-	signer := types.NewEIP155Signer(big.NewInt(int64(s.rpc.ChainID)))
-	hash := signer.Hash(tx)
-
-	msg := hex.EncodeToString(hash.Bytes())
-
-	var rawData []byte
-	if tx.Type() == types.LegacyTxType {
-		buf := new(bytes.Buffer)
-		if err := tx.EncodeRLP(buf); err != nil {
-			return "", "", errors.Wrap(err, "failed to encode transaction")
-		}
-		rawData = buf.Bytes()
-	}
-
-	log.Debug("[buildTokenTransaction] ERC20 transaction built",
-		"from", from,
-		"to", to,
-		"contract", contract,
-		"nonce", nonce,
+	log.Debug("[getEip1559TxFee] total fee calculated",
+		"gas_fee_cap", gasFeeCap.String(),
 		"gas", gas,
-		"chain_id", s.rpc.ChainID,
-		"msg", msg,
+		"total_fee", totalFee.String(),
 	)
 
-	return msg, hex.EncodeToString(rawData), nil
+	return totalFee, nil
 }
 
+// buildERC20TransferData 构建 ERC20 transfer 调用的 calldata
+// 格式：methodID(4字节) + 地址(32字节, 左补零) + 金额(32字节, 左补零)
+// transfer(address to, uint256 amount)
 func buildERC20TransferData(to string, amount *big.Int) []byte {
+	// ERC20 transfer 方法签名（Keccak-256 哈希的前 4 字节）
+	// transfer(address to, uint256 amount)
 	methodID := []byte{0xa9, 0x05, 0x9c, 0xbb}
 
 	paddedAddr := padAddressTo32BytesBytes(to)
 	paddedAmount := padAmountTo32Bytes(amount)
 
+	// 组装 calldata：4 字节 methodID + 32 字节地址 + 32 字节金额
 	data := make([]byte, 0, 4+32+32)
 	data = append(data, methodID...)
 	data = append(data, paddedAddr...)
@@ -741,24 +514,48 @@ func buildERC20TransferData(to string, amount *big.Int) []byte {
 	return data
 }
 
+// padAddressTo32Bytes 将地址补零到 32 字节（Hex 编码字符串）
+// Ethereum ABI 编码要求参数固定 32 字节
+// 示例：0x1234 -> 0x0000...00001234（左补零至 32 字节）
 func padAddressTo32Bytes(address string) string {
 	address = strings.TrimPrefix(address, "0x")
 	address = strings.ToLower(address)
 
+	// 将 hex 字符串转换为字节数组（40 hex chars = 20 bytes）
+	addrBytes, err := hex.DecodeString(address)
+	if err != nil {
+		log.Error("[padAddressTo32Bytes] failed to decode address", "address", address, "error", err)
+		return strings.Repeat("0", 64) // 返回全零的 32 字节 hex
+	}
+
+	// 创建 32 字节全零数组，从尾部开始复制地址（实现右对齐/左补零）
 	padded := make([]byte, 32)
-	copy(padded[32-len(address):], address)
+	copy(padded[32-len(addrBytes):], addrBytes)
 	return hex.EncodeToString(padded)
 }
 
+// padAddressTo32BytesBytes 将地址补零到 32 字节（字节数组版本）
+// 以太坊地址是 20 字节的 hex 编码（40 个十六进制字符），需要先转换为字节数组再补零
 func padAddressTo32BytesBytes(address string) []byte {
 	address = strings.TrimPrefix(address, "0x")
 	address = strings.ToLower(address)
 
+	// 将 hex 字符串转换为字节数组（40 hex chars = 20 bytes）
+	addrBytes, err := hex.DecodeString(address)
+	if err != nil {
+		log.Error("[padAddressTo32BytesBytes] failed to decode address", "address", address, "error", err)
+		return make([]byte, 32) // 返回空数组，避免后续 panic
+	}
+
+	// 创建 32 字节全零数组，从尾部开始复制地址（实现右对齐/左补零）
 	padded := make([]byte, 32)
-	copy(padded[32-len(address):], address)
+	copy(padded[32-len(addrBytes):], addrBytes)
 	return padded
 }
 
+// padAmountTo32Bytes 将金额补零到 32 字节
+// Ethereum ABI 编码要求 uint256 参数固定 32 字节
+// 示例：大数 0x1234567890 -> 0x0000...001234567890（左补零至 32 字节）
 func padAmountTo32Bytes(amount *big.Int) []byte {
 	amountBytes := amount.Bytes()
 	padded := make([]byte, 32)
@@ -766,6 +563,8 @@ func padAmountTo32Bytes(amount *big.Int) []byte {
 	return padded
 }
 
+// parseAmount 将字符串金额解析为 *big.Int（单位：wei）
+// 金额格式为十进制字符串（如 "1000000000000000000" 表示 1 ETH）
 func parseAmount(amount string) (*big.Int, error) {
 	amountInt, ok := new(big.Int).SetString(amount, 10)
 	if !ok {

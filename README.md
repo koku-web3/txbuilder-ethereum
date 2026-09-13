@@ -101,11 +101,10 @@ rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficie
 | ------------- | ------ | -------------------------------------- |
 | trace_id      | string | 追踪 ID（必填）                              |
 | chain_code    | string | 链码，如 "ethereum"、"sepolia"                   |
-| coin_id       | string | 币种 ID                                  |
-| is_basic_coin | bool   | `true` 表示 ETH（原生币），`false` 表示 ERC20 代币 |
+| coin          | string | 币种 ID                                  |
 | from_address  | string | 发送方地址（0x 开头）                            |
 | amount        | string | 转账金额（ETH 单位为 wei，代币为最小单位）              |
-| contract      | string | 代币合约地址（`is_basic_coin=false` 时必填）      |
+| contract      | string | 代币合约地址      |
 
 **响应：**
 
@@ -125,15 +124,14 @@ rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse)
 
 | 字段            | 类型     | 说明                                |
 | ------------- | ------ | --------------------------------- |
-| biz_id        | string | 业务 ID（必填，最多 36 字符）                |
+| trace_id      | string | 业务根据 ID（必填，最多 36 字符）                |
 | chain_code    | string | 链码，如 "ethereum"                              |
-| coin_id       | string | 币种 ID                             |
-| is_basic_coin | bool   | `true` 表示 ETH，`false` 表示 ERC20 代币 |
+| coin          | string | 币种 ID                             |
 | coin_symbol   | string | 代币符号                              |
 | from_address  | string | 发送方地址（0x 开头）                           |
 | to_address    | string | 接收方地址（0x 开头）                           |
 | amount        | string | 金额（必须是纯数字字符串，单位为 wei）                 |
-| contract      | string | 代币合约地址（`is_basic_coin=false` 时必填） |
+| contract      | string | 代币合约地址 |
 
 **响应：**
 
@@ -156,13 +154,14 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 | -------- | ------ | -------------------------- |
 | trace_id | string | 追踪 ID（必填）                   |
 | raw_data | string | 已签名 RLP 编码交易（十六进制字符串，1-4096 字符）   |
-| signature | string | 签名数据（保留兼容性，实质忽略）                |
+| signature | string | 外部传入的签名数据，格式为 R + S + V（V 只有 0 或 1，表示 R.y 坐标的奇偶性） |
 
 **响应：**
 
 | 字段      | 类型   | 说明      |
 | ------- | ---- | ------- |
 | success | bool | 广播是否成功 |
+| tx_hash | string | 交易哈希，广播成功后返回 |
 
 ## 配置
 
@@ -210,18 +209,16 @@ grpcurl -plaintext -d '{
 grpcurl -plaintext -d '{
   "trace_id": "test-002",
   "chain_code": "ethereum",
-  "coin_id": "eth",
-  "is_basic_coin": true,
+  "coin": "eth",
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "amount": "1000000000000000"
 }' localhost:50052 chain.TxBuilder/CheckSufficientBalance
 
 # 构造 ETH 转账交易
 grpcurl -plaintext -d '{
-  "biz_id": "tx-001",
+  "trace_id": "tx-001",
   "chain_code": "ethereum",
-  "coin_id": "eth",
-  "is_basic_coin": true,
+  "coin": "eth",
   "coin_symbol": "ETH",
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "to_address": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
@@ -273,7 +270,7 @@ func main() {
 
 	// 构造 ETH 转账
 	txResp, err := client.BuildSignRawData(ctx, &grpc.BuildSignRawDataRequest{
-		BizId:       "tx-001",
+		TraceId:       "tx-001",
 		ChainCode:   "ethereum",
 		CoinId:      "eth",
 		IsBasicCoin: true,

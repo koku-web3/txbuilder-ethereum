@@ -51,10 +51,13 @@ vmodule = ""
 	cfg := GetConfig()
 	if cfg == nil {
 		t.Fatal("GetConfig() returned nil")
+		return
 	}
 
-	if cfg.Chain.ChainCode != "ethereum" {
-		t.Errorf("ChainCode = %v, want %v", cfg.Chain.ChainCode, "ethereum")
+	// ChainConfig is a value type, safe to access after cfg nil check
+	chainCode := cfg.Chain.ChainCode
+	if chainCode != "ethereum" {
+		t.Errorf("ChainCode = %v, want %v", chainCode, "ethereum")
 	}
 	if cfg.Chain.RPCURL != "https://rpc.sepolia.org" {
 		t.Errorf("RPCURL = %v, want %v", cfg.Chain.RPCURL, "https://rpc.sepolia.org")
@@ -134,10 +137,13 @@ func TestSetConfigForTest(t *testing.T) {
 	cfg := GetConfig()
 	if cfg == nil {
 		t.Fatal("GetConfig() returned nil after SetConfigForTest")
+		return
 	}
 
-	if cfg.Chain.ChainCode != "ethereum" {
-		t.Errorf("Chain.ChainCode = %v, want %v", cfg.Chain.ChainCode, "ethereum")
+	// ChainConfig is a value type, safe to access after cfg nil check
+	chainCode := cfg.Chain.ChainCode
+	if chainCode != "ethereum" {
+		t.Errorf("Chain.ChainCode = %v, want %v", chainCode, "ethereum")
 	}
 	if cfg.Chain.RPCURL != "https://rpc.sepolia.org" {
 		t.Errorf("Chain.RPCURL = %v, want %v", cfg.Chain.RPCURL, "https://rpc.sepolia.org")

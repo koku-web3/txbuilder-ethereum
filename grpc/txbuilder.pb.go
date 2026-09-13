@@ -7,11 +7,12 @@
 package grpc
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -263,13 +264,12 @@ func (x *VerifyContractAddressResponse) GetIsValid() bool {
 // CheckSufficientBalance
 type CheckSufficientBalanceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	ChainCode     string                 `protobuf:"bytes,2,opt,name=chain_code,json=chainCode,proto3" json:"chain_code,omitempty"`
-	CoinId        string                 `protobuf:"bytes,3,opt,name=coin_id,json=coinId,proto3" json:"coin_id,omitempty"`
-	IsBasicCoin   bool                   `protobuf:"varint,4,opt,name=is_basic_coin,json=isBasicCoin,proto3" json:"is_basic_coin,omitempty"`
-	FromAddress   string                 `protobuf:"bytes,5,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"`
-	Amount        string                 `protobuf:"bytes,6,opt,name=amount,proto3" json:"amount,omitempty"`
-	Contract      string                 `protobuf:"bytes,7,opt,name=contract,proto3" json:"contract,omitempty"`
+	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`             // 1-36 必填
+	ChainCode     string                 `protobuf:"bytes,2,opt,name=chain_code,json=chainCode,proto3" json:"chain_code,omitempty"`       // 1-36 必填； 唯一， 表示区块链名称，如：bitcoin、ethereum、tron
+	Coin          string                 `protobuf:"bytes,3,opt,name=coin,proto3" json:"coin,omitempty"`                                  // 必填； 唯一， 表示转账币种，如：btc、eth、usdt、dog；不涉及判断逻辑，仅作展示
+	FromAddress   string                 `protobuf:"bytes,4,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"` // 1-256 必填；转账发起地址
+	Amount        string                 `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`                              // 必填； 金额，单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
+	Contract      string                 `protobuf:"bytes,6,opt,name=contract,proto3" json:"contract,omitempty"`                          // 1-256 非必填；转账币种对应的合约地址。如果空串表示主链币
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -318,18 +318,11 @@ func (x *CheckSufficientBalanceRequest) GetChainCode() string {
 	return ""
 }
 
-func (x *CheckSufficientBalanceRequest) GetCoinId() string {
+func (x *CheckSufficientBalanceRequest) GetCoin() string {
 	if x != nil {
-		return x.CoinId
+		return x.Coin
 	}
 	return ""
-}
-
-func (x *CheckSufficientBalanceRequest) GetIsBasicCoin() bool {
-	if x != nil {
-		return x.IsBasicCoin
-	}
-	return false
 }
 
 func (x *CheckSufficientBalanceRequest) GetFromAddress() string {
@@ -354,10 +347,11 @@ func (x *CheckSufficientBalanceRequest) GetContract() string {
 }
 
 type CheckSufficientBalanceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	IsSufficient  bool                   `protobuf:"varint,1,opt,name=is_sufficient,json=isSufficient,proto3" json:"is_sufficient,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	IsCoinSufficient  bool                   `protobuf:"varint,1,opt,name=is_coin_sufficient,json=isCoinSufficient,proto3" json:"is_coin_sufficient,omitempty"`    // 主链币是否足够
+	IsTokenSufficient bool                   `protobuf:"varint,2,opt,name=is_token_sufficient,json=isTokenSufficient,proto3" json:"is_token_sufficient,omitempty"` // 合约余额是否足够；注意当检查合约余额时两个返回值都需要判断
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CheckSufficientBalanceResponse) Reset() {
@@ -390,9 +384,16 @@ func (*CheckSufficientBalanceResponse) Descriptor() ([]byte, []int) {
 	return file_grpc_txbuilder_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *CheckSufficientBalanceResponse) GetIsSufficient() bool {
+func (x *CheckSufficientBalanceResponse) GetIsCoinSufficient() bool {
 	if x != nil {
-		return x.IsSufficient
+		return x.IsCoinSufficient
+	}
+	return false
+}
+
+func (x *CheckSufficientBalanceResponse) GetIsTokenSufficient() bool {
+	if x != nil {
+		return x.IsTokenSufficient
 	}
 	return false
 }
@@ -400,15 +401,14 @@ func (x *CheckSufficientBalanceResponse) GetIsSufficient() bool {
 // BuildSignRawData
 type BuildSignRawDataRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	BizId         string                 `protobuf:"bytes,1,opt,name=biz_id,json=bizId,proto3" json:"biz_id,omitempty"`
-	ChainCode     string                 `protobuf:"bytes,2,opt,name=chain_code,json=chainCode,proto3" json:"chain_code,omitempty"`
-	CoinId        string                 `protobuf:"bytes,3,opt,name=coin_id,json=coinId,proto3" json:"coin_id,omitempty"`
-	IsBasicCoin   bool                   `protobuf:"varint,4,opt,name=is_basic_coin,json=isBasicCoin,proto3" json:"is_basic_coin,omitempty"`
-	CoinSymbol    string                 `protobuf:"bytes,5,opt,name=coin_symbol,json=coinSymbol,proto3" json:"coin_symbol,omitempty"`
-	FromAddress   string                 `protobuf:"bytes,6,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"`
-	ToAddress     string                 `protobuf:"bytes,7,opt,name=to_address,json=toAddress,proto3" json:"to_address,omitempty"`
-	Amount        string                 `protobuf:"bytes,8,opt,name=amount,proto3" json:"amount,omitempty"`
-	Contract      string                 `protobuf:"bytes,9,opt,name=contract,proto3" json:"contract,omitempty"`
+	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`             // 1-36 必填
+	ChainCode     string                 `protobuf:"bytes,2,opt,name=chain_code,json=chainCode,proto3" json:"chain_code,omitempty"`       // 1-36 必填； 唯一， 表示区块链名称，如：bitcoin、ethereum、tron
+	Coin          string                 `protobuf:"bytes,3,opt,name=coin,proto3" json:"coin,omitempty"`                                  // 必填； 唯一， 表示转账币种，如：btc、eth、usdt、dog；不涉及判断逻辑，仅作展示
+	CoinSymbol    string                 `protobuf:"bytes,4,opt,name=coin_symbol,json=coinSymbol,proto3" json:"coin_symbol,omitempty"`    // 1-36 必填； 币种符合，用于展示，不涉及逻辑
+	FromAddress   string                 `protobuf:"bytes,5,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"` // 1-256 必填；转账发起地址
+	ToAddress     string                 `protobuf:"bytes,6,opt,name=to_address,json=toAddress,proto3" json:"to_address,omitempty"`       // 1-256 必填；转账接收地址
+	Amount        string                 `protobuf:"bytes,7,opt,name=amount,proto3" json:"amount,omitempty"`                              // 必填； 转账金额，单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
+	Contract      string                 `protobuf:"bytes,8,opt,name=contract,proto3" json:"contract,omitempty"`                          // 1-256 非必填；转账币种对应的合约地址。如果空串表示主链币
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -443,9 +443,9 @@ func (*BuildSignRawDataRequest) Descriptor() ([]byte, []int) {
 	return file_grpc_txbuilder_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *BuildSignRawDataRequest) GetBizId() string {
+func (x *BuildSignRawDataRequest) GetTraceId() string {
 	if x != nil {
-		return x.BizId
+		return x.TraceId
 	}
 	return ""
 }
@@ -457,18 +457,11 @@ func (x *BuildSignRawDataRequest) GetChainCode() string {
 	return ""
 }
 
-func (x *BuildSignRawDataRequest) GetCoinId() string {
+func (x *BuildSignRawDataRequest) GetCoin() string {
 	if x != nil {
-		return x.CoinId
+		return x.Coin
 	}
 	return ""
-}
-
-func (x *BuildSignRawDataRequest) GetIsBasicCoin() bool {
-	if x != nil {
-		return x.IsBasicCoin
-	}
-	return false
 }
 
 func (x *BuildSignRawDataRequest) GetCoinSymbol() string {
@@ -508,8 +501,8 @@ func (x *BuildSignRawDataRequest) GetContract() string {
 
 type BuildSignRawDataResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Msg           string                 `protobuf:"bytes,1,opt,name=msg,proto3" json:"msg,omitempty"`                        // Keccak-256 hash of unsigned tx - message to sign
-	RawData       string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // Unsigned RLP encoded transaction (hex) - for Coordinator to sign
+	Msg           string                 `protobuf:"bytes,1,opt,name=msg,proto3" json:"msg,omitempty"`                        // SHA256(raw_data) - 待签名内容
+	RawData       string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // 原始交易数据 (hex 编码) - Coordinator 用于构造完整交易
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -560,10 +553,13 @@ func (x *BuildSignRawDataResponse) GetRawData() string {
 
 // TxBroadcast
 type TxBroadcastRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
-	RawData       string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // Signed RLP encoded transaction (hex)
-	Signature     string                 `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`            // Signature (hex) - kept for compatibility, ignored
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	TraceId string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	RawData string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // 原始交易数据 (hex 编码)
+	// 长度 65 个字节
+	// 外部传入的签名数据，格式为 R（32字节） + S （32字节）+ V (V 1个字节，只有 0 或 1，表示 R.y 坐标的奇偶性)
+	// 使用时需要根据链的特性调整 V 值，例如以太坊签名数据最后一个字节调整: signature[64] = V + 27
+	Signature     string `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -622,6 +618,7 @@ func (x *TxBroadcastRequest) GetSignature() string {
 type TxBroadcastResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	TxHash        string                 `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -663,6 +660,13 @@ func (x *TxBroadcastResponse) GetSuccess() bool {
 	return false
 }
 
+func (x *TxBroadcastResponse) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
 var File_grpc_txbuilder_proto protoreflect.FileDescriptor
 
 const file_grpc_txbuilder_proto_rawDesc = "" +
@@ -679,31 +683,30 @@ const file_grpc_txbuilder_proto_rawDesc = "" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\":\n" +
 	"\x1dVerifyContractAddressResponse\x12\x19\n" +
-	"\bis_valid\x18\x01 \x01(\bR\aisValid\"\xed\x01\n" +
+	"\bis_valid\x18\x01 \x01(\bR\aisValid\"\xc4\x01\n" +
 	"\x1dCheckSufficientBalanceRequest\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x1d\n" +
 	"\n" +
-	"chain_code\x18\x02 \x01(\tR\tchainCode\x12\x17\n" +
-	"\acoin_id\x18\x03 \x01(\tR\x06coinId\x12\"\n" +
-	"\ris_basic_coin\x18\x04 \x01(\bR\visBasicCoin\x12!\n" +
-	"\ffrom_address\x18\x05 \x01(\tR\vfromAddress\x12\x16\n" +
-	"\x06amount\x18\x06 \x01(\tR\x06amount\x12\x1a\n" +
-	"\bcontract\x18\a \x01(\tR\bcontract\"E\n" +
-	"\x1eCheckSufficientBalanceResponse\x12#\n" +
-	"\ris_sufficient\x18\x01 \x01(\bR\fisSufficient\"\xa3\x02\n" +
-	"\x17BuildSignRawDataRequest\x12\x15\n" +
-	"\x06biz_id\x18\x01 \x01(\tR\x05bizId\x12\x1d\n" +
+	"chain_code\x18\x02 \x01(\tR\tchainCode\x12\x12\n" +
+	"\x04coin\x18\x03 \x01(\tR\x04coin\x12!\n" +
+	"\ffrom_address\x18\x04 \x01(\tR\vfromAddress\x12\x16\n" +
+	"\x06amount\x18\x05 \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcontract\x18\x06 \x01(\tR\bcontract\"~\n" +
+	"\x1eCheckSufficientBalanceResponse\x12,\n" +
+	"\x12is_coin_sufficient\x18\x01 \x01(\bR\x10isCoinSufficient\x12.\n" +
+	"\x13is_token_sufficient\x18\x02 \x01(\bR\x11isTokenSufficient\"\xfe\x01\n" +
+	"\x17BuildSignRawDataRequest\x12\x19\n" +
+	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x1d\n" +
 	"\n" +
-	"chain_code\x18\x02 \x01(\tR\tchainCode\x12\x17\n" +
-	"\acoin_id\x18\x03 \x01(\tR\x06coinId\x12\"\n" +
-	"\ris_basic_coin\x18\x04 \x01(\bR\visBasicCoin\x12\x1f\n" +
-	"\vcoin_symbol\x18\x05 \x01(\tR\n" +
+	"chain_code\x18\x02 \x01(\tR\tchainCode\x12\x12\n" +
+	"\x04coin\x18\x03 \x01(\tR\x04coin\x12\x1f\n" +
+	"\vcoin_symbol\x18\x04 \x01(\tR\n" +
 	"coinSymbol\x12!\n" +
-	"\ffrom_address\x18\x06 \x01(\tR\vfromAddress\x12\x1d\n" +
+	"\ffrom_address\x18\x05 \x01(\tR\vfromAddress\x12\x1d\n" +
 	"\n" +
-	"to_address\x18\a \x01(\tR\ttoAddress\x12\x16\n" +
-	"\x06amount\x18\b \x01(\tR\x06amount\x12\x1a\n" +
-	"\bcontract\x18\t \x01(\tR\bcontract\"G\n" +
+	"to_address\x18\x06 \x01(\tR\ttoAddress\x12\x16\n" +
+	"\x06amount\x18\a \x01(\tR\x06amount\x12\x1a\n" +
+	"\bcontract\x18\b \x01(\tR\bcontract\"G\n" +
 	"\x18BuildSignRawDataResponse\x12\x10\n" +
 	"\x03msg\x18\x01 \x01(\tR\x03msg\x12\x19\n" +
 	"\braw_data\x18\x02 \x01(\tR\arawData\"h\n" +

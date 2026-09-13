@@ -1,6 +1,6 @@
 [chain]
 chain_code = "ethereum"
-rpc_url = "https://rpc.sepolia.org"
+rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
 chain_id = 11155111
 
 [grpc]
@@ -15,5 +15,5 @@ max_backups = 10
 max_age = 30
 compress = true
 format = "terminal"
-verbosity = 3
+verbosity = 5
 vmodule = ""

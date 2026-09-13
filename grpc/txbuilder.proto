@@ -6,87 +6,89 @@ option go_package = "github.com/koku-web3/txbuilder-ethereum/grpc;grpc";
 
 // TxBuilder service provides transaction construction APIs
 service TxBuilder {
-    // Verify if an address is valid
-    rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
+  // Verify if an address is valid
+  rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
 
-    // Verify if a contract address is valid
-    rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractAddressResponse);
+  // Verify if a contract address is valid
+  rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractAddressResponse);
 
-    // Check if the balance is sufficient for a transfer
-    rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficientBalanceResponse);
+  // Check if the balance is sufficient for a transfer
+  rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficientBalanceResponse);
 
-    // Build unsigned transaction raw data for signing
-    rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse);
+  // Build unsigned transaction raw data for signing
+  rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse);
 
-    // Broadcast a signed transaction to the network
-    rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
+  // Broadcast a signed transaction to the network
+  rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 }
 
 // Common request with trace ID
 message RequestWithTraceId {
-    string trace_id = 1;
+  string trace_id = 1;
 }
 
 // VerifyAddress
 message VerifyAddressRequest {
-    string trace_id = 1;
-    string address = 2;
+  string trace_id = 1;
+  string address = 2;
 }
 
 message VerifyAddressResponse {
-    bool is_valid = 1;
+  bool is_valid = 1;
 }
 
 // VerifyContractAddress
 message VerifyContractAddressRequest {
-    string trace_id = 1;
-    string address = 2;
+  string trace_id = 1;
+  string address = 2;
 }
 
 message VerifyContractAddressResponse {
-    bool is_valid = 1;
+  bool is_valid = 1;
 }
 
 // CheckSufficientBalance
 message CheckSufficientBalanceRequest {
-    string trace_id = 1;
-    string chain_code = 2;
-    string coin_id = 3;
-    bool is_basic_coin = 4;
-    string from_address = 5;
-    string amount = 6;
-    string contract = 7;
+  string trace_id = 1; // 1-36 必填
+  string chain_code = 2; // 1-36 必填； 唯一， 表示区块链名称，如：bitcoin、ethereum、tron
+  string coin = 3; // 必填； 唯一， 表示转账币种，如：btc、eth、usdt、dog；不涉及判断逻辑，仅作展示
+  string from_address = 4; // 1-256 必填；转账发起地址
+  string amount = 5; // 必填； 金额，单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
+  string contract = 6; // 1-256 非必填；转账币种对应的合约地址。如果空串表示主链币
 }
 
 message CheckSufficientBalanceResponse {
-    bool is_sufficient = 1;
+  bool is_coin_sufficient = 1; // 主链币是否足够
+  bool is_token_sufficient = 2; // 合约余额是否足够；注意当检查合约余额时两个返回值都需要判断
 }
 
 // BuildSignRawData
 message BuildSignRawDataRequest {
-    string biz_id = 1;
-    string chain_code = 2;
-    string coin_id = 3;
-    bool is_basic_coin = 4;
-    string coin_symbol = 5;
-    string from_address = 6;
-    string to_address = 7;
-    string amount = 8;
-    string contract = 9;
+  string trace_id = 1; // 1-36 必填
+  string chain_code = 2; // 1-36 必填； 唯一， 表示区块链名称，如：bitcoin、ethereum、tron
+  string coin = 3; // 必填； 唯一， 表示转账币种，如：btc、eth、usdt、dog；不涉及判断逻辑，仅作展示
+  string coin_symbol = 4; // 1-36 必填； 币种符合，用于展示，不涉及逻辑
+  string from_address = 5; // 1-256 必填；转账发起地址
+  string to_address = 6; // 1-256 必填；转账接收地址
+  string amount = 7; // 必填； 转账金额，单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
+  string contract = 8; // 1-256 非必填；转账币种对应的合约地址。如果空串表示主链币
 }
 
 message BuildSignRawDataResponse {
-    string msg = 1;        // Keccak-256 hash of unsigned tx - message to sign
-    string raw_data = 2;   // Unsigned RLP encoded transaction (hex) - for Coordinator to sign
+  string msg = 1; // SHA256(raw_data) - 待签名内容
+  string raw_data = 2; // 原始交易数据 (hex 编码) - Coordinator 用于构造完整交易
 }
 
 // TxBroadcast
 message TxBroadcastRequest {
-    string trace_id = 1;
-    string raw_data = 2;    // Signed RLP encoded transaction (hex)
-    string signature = 3;    // Signature (hex) - kept for compatibility, ignored
+  string trace_id = 1;
+  string raw_data = 2; // 原始交易数据 (hex 编码)
+  // 长度 65 个字节
+  // 外部传入的签名数据，格式为 R（32字节） + S （32字节）+ V (V 1个字节，只有 0 或 1，表示 R.y 坐标的奇偶性)
+  string signature = 3;
 }
 
 message TxBroadcastResponse {
-    bool success = 1;
+  bool success = 1;
+  string tx_hash = 2; // 交易哈希，广播成功后返回
 }
