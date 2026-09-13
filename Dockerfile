@@ -1,6 +1,12 @@
 # Build stage
 FROM golang:1.26-bookworm AS builder
 
+# Set proxy for build
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV http_proxy=$HTTP_PROXY
+ENV https_proxy=$HTTPS_PROXY
+
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
