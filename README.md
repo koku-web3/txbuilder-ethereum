@@ -288,6 +288,76 @@ func main() {
 
 ## 开发
 
+### Docker 部署
+
+本项目支持 Docker 容器化部署。
+
+#### 前置条件
+
+- Docker 20.10+
+- Docker Compose v2.0+
+
+#### 快速启动
+
+```bash
+# 构建并启动服务
+docker-compose up -d
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+```
+
+#### 配置说明
+
+配置文件位于 `./config/config.toml`，通过 volume 挂载到容器内 `/app/config` 目录。
+
+**重要**：默认配置监听 `127.0.0.1:50052`，Docker 部署时需改为监听所有地址：
+
+```toml
+[grpc]
+host = "0.0.0.0"  # 改为 0.0.0.0 以允许外部访问
+port = 50052
+```
+
+#### 端口说明
+
+| 端口 | 说明 |
+| ---- | ---- |
+| 50052 | gRPC 服务端口 |
+
+#### 常用命令
+
+```bash
+# 停止服务
+docker-compose down
+
+# 重新构建（代码变更后）
+docker-compose up -d --build
+
+# 进入容器调试
+docker exec -it txbuilder-ethereum sh
+
+# 查看服务日志
+docker-compose logs -f txbuilder-ethereum
+```
+
+#### 测试 gRPC 服务
+
+服务启动后，可使用 grpcurl 测试：
+
+```bash
+# 验证地址
+grpcurl -plaintext -d '{
+  "trace_id": "test-001",
+  "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+}' localhost:50052 chain.TxBuilder/VerifyAddress
+```
+
+### 生成 protobuf 代码
+
 ### 生成 protobuf 代码
 
 ```bash
