@@ -1,8 +1,11 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-bookworm AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -18,16 +21,20 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o txbuilder-ethereum ./cmd/txbuilder-ethereum/
 
 # Runtime stage
-FROM alpine:3.19
+FROM debian:bookworm-slim
 
 # Install CA certificates for HTTPS calls
-RUN apk --no-cache add ca-certificates tzdata
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    tzdata \
+    netcat \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set timezone
 ENV TZ=Asia/Shanghai
 
 # Create non-root user
-RUN adduser -D -g '' appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Set working directory
 WORKDIR /app
@@ -49,7 +56,7 @@ EXPOSE 50052
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:50052/Health || exit 1
+    CMD nc -z 127.0.0.1 50052 || exit 1
 
 # Run the application
 ENTRYPOINT ["./txbuilder-ethereum"]
