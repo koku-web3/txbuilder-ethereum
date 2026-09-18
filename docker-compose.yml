@@ -4,21 +4,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        - HTTP_PROXY=http://host.docker.internal:7890
-        - HTTPS_PROXY=http://host.docker.internal:7890
     image: txbuilder-ethereum:latest
     ports:
-      - "50052:50052"
+      - "51051:51051"
     volumes:
       - ./config:/app/config:rw
-    environment:
-      - TZ=Asia/Shanghai
-      - HTTP_PROXY=http://host.docker.internal:7890
-      - HTTPS_PROXY=http://host.docker.internal:7890
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "50052"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "51051"]
       interval: 30s
       timeout: 10s
       retries: 3

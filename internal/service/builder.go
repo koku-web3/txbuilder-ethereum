@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	log "github.com/koku-web3/logko"
-	"github.com/koku-web3/txbuilder-ethereum/grpc"
+	txbuilder "github.com/koku-web3/txbuilder-ethereum/grpc"
 	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
@@ -27,7 +27,7 @@ import (
 // 返回值：
 //   - msg: Keccak-256 哈希（Hex 编码），用于外部签名
 //   - raw_data: 序列化交易数据（Hex 字符串），签名后用于广播
-func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *grpc.BuildSignRawDataRequest) (*grpc.BuildSignRawDataResponse, error) {
+func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.BuildSignRawDataRequest) (*txbuilder.BuildSignRawDataResponse, error) {
 	if err := s.validateBuildSignRawData(req); err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *grpc.Build
 
 	log.Info("[BuildSignRawData] transaction built successfully", "trace_id", req.TraceId, "msg_length", len(msg), "raw_data_length", len(rawData))
 
-	resp := &grpc.BuildSignRawDataResponse{
+	resp := &txbuilder.BuildSignRawDataResponse{
 		Msg:     msg,
 		RawData: rawData,
 	}

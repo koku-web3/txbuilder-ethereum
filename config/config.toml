@@ -5,7 +5,7 @@ chain_id = 11155111
 
 [grpc]
 host = "127.0.0.1"
-port = 50052
+port = 51051
 
 [log]
 rotation = true

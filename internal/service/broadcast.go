@@ -8,14 +8,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	log "github.com/koku-web3/logko"
-	"github.com/koku-web3/txbuilder-ethereum/grpc"
+	txbuilder "github.com/koku-web3/txbuilder-ethereum/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 // TxBroadcast 广播已签名的交易到以太坊网络
 // 将签名后的交易提交到节点，节点验证后放入交易池并执行
-func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *grpc.TxBroadcastRequest) (*grpc.TxBroadcastResponse, error) {
+func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *txbuilder.TxBroadcastRequest) (*txbuilder.TxBroadcastResponse, error) {
 	log.Info("[TxBroadcast] received request", "trace_id", req.TraceId, "raw_data_length", len(req.RawData), "signature_length", len(req.Signature))
 
 	if req.TraceId == "" {
@@ -78,5 +78,5 @@ func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *grpc.TxBroadcas
 
 	log.Info("[TxBroadcast] broadcast success", "trace_id", req.TraceId, "tx_hash", txHash, "success", true)
 
-	return &grpc.TxBroadcastResponse{Success: true, TxHash: txHash}, nil
+	return &txbuilder.TxBroadcastResponse{Success: true, TxHash: txHash}, nil
 }

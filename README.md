@@ -27,10 +27,14 @@ txbuilder-ethereum/
 │   │   └── config_test.go
 │   ├── service/             # gRPC handler 实现
 │   │   ├── service.go
-│   │   └── service_test.go
+│   │   ├── service_test.go
+│   │   ├── builder.go
+│   │   └── broadcast.go
 │   └── ethereum/            # Ethereum 相关工具
 │       ├── address.go       # 地址校验（0x + 40 hex）
 │       ├── address_test.go
+│       ├── pubkey.go       # PEM 公钥转 Ethereum 地址
+│       ├── pubkey_test.go
 │       └── rpc.go           # Ethereum 节点 JSON-RPC 客户端
 ├── grpc/
 │   ├── txbuilder.proto      # gRPC 服务和消息定义
@@ -43,7 +47,7 @@ txbuilder-ethereum/
 
 ## gRPC 接口
 
-服务在 `host:port`（默认 `127.0.0.1:50052`）上暴露 `TxBuilder` gRPC 服务。
+服务在 `host:port`（默认 `127.0.0.1:51051`）上暴露 `TxBuilder` gRPC 服务。
 
 ### 1. VerifyAddress
 
@@ -87,7 +91,42 @@ rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractA
 | -------- | ---- | ------ |
 | is_valid | bool | 地址是否合法 |
 
-### 3. CheckSufficientBalance
+### 3. ConvertAddress
+
+将 PKIX 格式的 PEM 公钥转换为 Ethereum 地址（`0x` + 40 hex，含 EIP-55 校验和）。
+
+```protobuf
+rpc ConvertAddress(ConvertAddressRequest) returns (ConvertAddressResponse);
+```
+
+**请求：**
+
+| 字段       | 类型     | 说明        |
+| -------- | ------ | --------- |
+| trace_id | string | 追踪 ID（必填，1-36 字符） |
+| keys | repeated PublicKeysRequest | 公钥列表（必填，最多 100 条） |
+
+**PublicKeysRequest：**
+
+| 字段           | 类型     | 说明                   |
+| ------------ | ------ | -------------------- |
+| account_index | uint32 | 账户索引（原样透传）         |
+| pkix_pubkey_pem | string | PKIX 标准的公钥 PEM 格式（必填，最多 4096 字符） |
+
+**响应：**
+
+| 字段    | 类型                          | 说明     |
+| ----- | --------------------------- | ------ |
+| keys  | repeated PublicKeysResponse | 转换结果列表 |
+
+**PublicKeysResponse：**
+
+| 字段          | 类型     | 说明                       |
+| ----------- | ------ | ------------------------ |
+| account_index | uint32 | 账户索引（与请求对应）            |
+| address      | string | Ethereum 地址（`0x` + 40 hex，含 EIP-55） |
+
+### 4. CheckSufficientBalance
 
 检查账户余额是否足够发起转账。
 
@@ -112,7 +151,7 @@ rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficie
 | ------------- | ---- | ------ |
 | is_sufficient | bool | 余额是否充足 |
 
-### 4. BuildSignRawData
+### 5. BuildSignRawData
 
 构造待签名的交易原始数据（RLP 编码）。
 
@@ -140,7 +179,7 @@ rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse)
 | msg     | string | Keccak-256 哈希（十六进制字符串，用于签名）        |
 | raw_data | string | 未签名 RLP 编码交易（十六进制字符串），用于 Coordinator 签名 |
 
-### 5. TxBroadcast
+### 6. TxBroadcast
 
 广播已签名的交易数据到 Ethereum 网络。
 
@@ -175,7 +214,7 @@ chain_id = 11155111
 
 [grpc]
 host = "127.0.0.1"
-port = 50052
+port = 51051
 
 [log]
 rotation = true
@@ -199,11 +238,24 @@ vmodule = ""
 # 启动服务
 go run ./cmd/txbuilder-ethereum/main.go
 
+# 转换公钥为地址（需要先从私钥导出 PEM 格式的 PKIX 公钥）
+# 示例：用 openssl 生成 secp256k1 公钥 PEM，再调用 ConvertAddress
+# openssl ecparam -name secp256k1 -genkey -out /tmp/key.pem
+# openssl ec -in /tmp/key.pem -pubout -out /tmp/pub.pem
+# cat /tmp/pub.pem
+# 然后调用接口（替换下面的 pkix_pubkey_pem 为实际 PEM 内容）：
+grpcurl -plaintext -d '{
+  "trace_id": "convert-001",
+  "keys": [
+    {"account_index": 0, "pkix_pubkey_pem": "-----BEGIN PUBLIC KEY-----\nMFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAE...\n-----END PUBLIC KEY-----\n"}
+  ]
+}' localhost:51051 chain.TxBuilder/ConvertAddress
+
 # 验证地址
 grpcurl -plaintext -d '{
   "trace_id": "test-001",
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-}' localhost:50052 chain.TxBuilder/VerifyAddress
+}' localhost:51051 chain.TxBuilder/VerifyAddress
 
 # 检查余额（ETH）
 grpcurl -plaintext -d '{
@@ -212,7 +264,7 @@ grpcurl -plaintext -d '{
   "coin": "eth",
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "amount": "1000000000000000"
-}' localhost:50052 chain.TxBuilder/CheckSufficientBalance
+}' localhost:51051 chain.TxBuilder/CheckSufficientBalance
 
 # 构造 ETH 转账交易
 grpcurl -plaintext -d '{
@@ -223,7 +275,7 @@ grpcurl -plaintext -d '{
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "to_address": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
   "amount": "1000000000000000"
-}' localhost:50052 chain.TxBuilder/BuildSignRawData
+}' localhost:51051 chain.TxBuilder/BuildSignRawData
 # 响应示例: {"msg": "...", "raw_data": "..."}
 
 # 广播已签名的交易（raw_data 包含签名）
@@ -231,7 +283,7 @@ grpcurl -plaintext -d '{
   "trace_id": "broadcast-001",
   "raw_data": "0xf86c018504a817c80082520894d8da6bf26964af9d7eed9e03e53415d37aa960458088016345785d8a0000801ca0798c92bfb0d1dfccba6f0912a8f03d9e1bdfef5ee3de0bd67c7c5b97425d38b6",
   "signature": ""
-}' localhost:50052 chain.TxBuilder/TxBroadcast
+}' localhost:51051 chain.TxBuilder/TxBroadcast
 ```
 
 ### Go 客户端示例
@@ -249,7 +301,7 @@ import (
 )
 
 func main() {
-	conn, err := grpc.NewClient("localhost:50052", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:51051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(err)
 	}
@@ -338,19 +390,19 @@ docker compose logs -f
 
 配置文件位于 `./config/config.toml`，通过 volume 挂载到容器内 `/app/config` 目录。
 
-**重要**：默认配置监听 `127.0.0.1:50052`，Docker 部署时需改为监听所有地址：
+**重要**：默认配置监听 `127.0.0.1:51051`，Docker 部署时需改为监听所有地址：
 
 ```toml
 [grpc]
 host = "0.0.0.0"  # 改为 0.0.0.0 以允许外部访问
-port = 50052
+port = 51051
 ```
 
 #### 端口说明
 
 | 端口 | 说明 |
 | ---- | ---- |
-| 50052 | gRPC 服务端口 |
+| 51051 | gRPC 服务端口 |
 
 #### 常用命令
 
@@ -377,5 +429,5 @@ docker compose logs -f txbuilder-ethereum
 grpcurl -plaintext -d '{
   "trace_id": "test-001",
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-}' localhost:50052 chain.TxBuilder/VerifyAddress
+}' localhost:51051 chain.TxBuilder/VerifyAddress
 ```

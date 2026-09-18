@@ -4,11 +4,10 @@
 // - protoc             v6.33.1
 // source: grpc/txbuilder.proto
 
-package grpc
+package txbuilder
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -20,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TxBuilder_VerifyAddress_FullMethodName          = "/chain.TxBuilder/VerifyAddress"
-	TxBuilder_VerifyContractAddress_FullMethodName  = "/chain.TxBuilder/VerifyContractAddress"
-	TxBuilder_CheckSufficientBalance_FullMethodName = "/chain.TxBuilder/CheckSufficientBalance"
-	TxBuilder_BuildSignRawData_FullMethodName       = "/chain.TxBuilder/BuildSignRawData"
-	TxBuilder_TxBroadcast_FullMethodName            = "/chain.TxBuilder/TxBroadcast"
+	TxBuilder_ConvertAddress_FullMethodName         = "/txbuilder.TxBuilder/ConvertAddress"
+	TxBuilder_VerifyAddress_FullMethodName          = "/txbuilder.TxBuilder/VerifyAddress"
+	TxBuilder_VerifyContractAddress_FullMethodName  = "/txbuilder.TxBuilder/VerifyContractAddress"
+	TxBuilder_CheckSufficientBalance_FullMethodName = "/txbuilder.TxBuilder/CheckSufficientBalance"
+	TxBuilder_BuildSignRawData_FullMethodName       = "/txbuilder.TxBuilder/BuildSignRawData"
+	TxBuilder_TxBroadcast_FullMethodName            = "/txbuilder.TxBuilder/TxBroadcast"
 )
 
 // TxBuilderClient is the client API for TxBuilder service.
@@ -33,6 +33,8 @@ const (
 //
 // TxBuilder service provides transaction construction APIs
 type TxBuilderClient interface {
+	// Convert PEM-encoded public keys to Ethereum addresses
+	ConvertAddress(ctx context.Context, in *ConvertAddressRequest, opts ...grpc.CallOption) (*ConvertAddressResponse, error)
 	// Verify if an address is valid
 	VerifyAddress(ctx context.Context, in *VerifyAddressRequest, opts ...grpc.CallOption) (*VerifyAddressResponse, error)
 	// Verify if a contract address is valid
@@ -51,6 +53,16 @@ type txBuilderClient struct {
 
 func NewTxBuilderClient(cc grpc.ClientConnInterface) TxBuilderClient {
 	return &txBuilderClient{cc}
+}
+
+func (c *txBuilderClient) ConvertAddress(ctx context.Context, in *ConvertAddressRequest, opts ...grpc.CallOption) (*ConvertAddressResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConvertAddressResponse)
+	err := c.cc.Invoke(ctx, TxBuilder_ConvertAddress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *txBuilderClient) VerifyAddress(ctx context.Context, in *VerifyAddressRequest, opts ...grpc.CallOption) (*VerifyAddressResponse, error) {
@@ -109,6 +121,8 @@ func (c *txBuilderClient) TxBroadcast(ctx context.Context, in *TxBroadcastReques
 //
 // TxBuilder service provides transaction construction APIs
 type TxBuilderServer interface {
+	// Convert PEM-encoded public keys to Ethereum addresses
+	ConvertAddress(context.Context, *ConvertAddressRequest) (*ConvertAddressResponse, error)
 	// Verify if an address is valid
 	VerifyAddress(context.Context, *VerifyAddressRequest) (*VerifyAddressResponse, error)
 	// Verify if a contract address is valid
@@ -129,6 +143,9 @@ type TxBuilderServer interface {
 // pointer dereference when methods are called.
 type UnimplementedTxBuilderServer struct{}
 
+func (UnimplementedTxBuilderServer) ConvertAddress(context.Context, *ConvertAddressRequest) (*ConvertAddressResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConvertAddress not implemented")
+}
 func (UnimplementedTxBuilderServer) VerifyAddress(context.Context, *VerifyAddressRequest) (*VerifyAddressResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyAddress not implemented")
 }
@@ -163,6 +180,24 @@ func RegisterTxBuilderServer(s grpc.ServiceRegistrar, srv TxBuilderServer) {
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&TxBuilder_ServiceDesc, srv)
+}
+
+func _TxBuilder_ConvertAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConvertAddressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxBuilderServer).ConvertAddress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxBuilder_ConvertAddress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxBuilderServer).ConvertAddress(ctx, req.(*ConvertAddressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _TxBuilder_VerifyAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -259,9 +294,13 @@ func _TxBuilder_TxBroadcast_Handler(srv interface{}, ctx context.Context, dec fu
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var TxBuilder_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "chain.TxBuilder",
+	ServiceName: "txbuilder.TxBuilder",
 	HandlerType: (*TxBuilderServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ConvertAddress",
+			Handler:    _TxBuilder_ConvertAddress_Handler,
+		},
 		{
 			MethodName: "VerifyAddress",
 			Handler:    _TxBuilder_VerifyAddress_Handler,

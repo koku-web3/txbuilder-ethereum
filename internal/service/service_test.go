@@ -2,13 +2,18 @@ package service
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
 	"math/big"
 	"strings"
 	"testing"
 
-	"github.com/koku-web3/txbuilder-ethereum/grpc"
+	"github.com/ethereum/go-ethereum/crypto"
+	txbuilder "github.com/koku-web3/txbuilder-ethereum/grpc"
 	"github.com/koku-web3/txbuilder-ethereum/internal/config"
+	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
 )
 
 func TestVerifyAddress(t *testing.T) {
@@ -56,7 +61,7 @@ func TestVerifyAddress(t *testing.T) {
 
 			svc := &TxBuilderService{}
 
-			req := &grpc.VerifyAddressRequest{
+			req := &txbuilder.VerifyAddressRequest{
 				TraceId: tt.traceID,
 				Address: tt.address,
 			}
@@ -111,7 +116,7 @@ func TestVerifyContractAddress(t *testing.T) {
 
 			svc := &TxBuilderService{}
 
-			req := &grpc.VerifyContractAddressRequest{
+			req := &txbuilder.VerifyContractAddressRequest{
 				TraceId: tt.traceID,
 				Address: tt.address,
 			}
@@ -136,12 +141,12 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		req     *grpc.CheckSufficientBalanceRequest
+		req     *txbuilder.CheckSufficientBalanceRequest
 		wantErr bool
 	}{
 		{
 			name: "missing trace_id",
-			req: &grpc.CheckSufficientBalanceRequest{
+			req: &txbuilder.CheckSufficientBalanceRequest{
 				TraceId:     "",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -152,7 +157,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 		},
 		{
 			name: "missing chain_code",
-			req: &grpc.CheckSufficientBalanceRequest{
+			req: &txbuilder.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "",
 				Coin:        "eth",
@@ -163,7 +168,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 		},
 		{
 			name: "missing coin",
-			req: &grpc.CheckSufficientBalanceRequest{
+			req: &txbuilder.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "",
@@ -174,7 +179,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 		},
 		{
 			name: "missing from_address",
-			req: &grpc.CheckSufficientBalanceRequest{
+			req: &txbuilder.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -185,7 +190,7 @@ func TestCheckSufficientBalance_Validation(t *testing.T) {
 		},
 		{
 			name: "missing amount",
-			req: &grpc.CheckSufficientBalanceRequest{
+			req: &txbuilder.CheckSufficientBalanceRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -216,12 +221,12 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		req     *grpc.BuildSignRawDataRequest
+		req     *txbuilder.BuildSignRawDataRequest
 		wantErr bool
 	}{
 		{
 			name: "missing trace_id",
-			req: &grpc.BuildSignRawDataRequest{
+			req: &txbuilder.BuildSignRawDataRequest{
 				TraceId:     "",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -234,7 +239,7 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		},
 		{
 			name: "invalid from_address",
-			req: &grpc.BuildSignRawDataRequest{
+			req: &txbuilder.BuildSignRawDataRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -247,7 +252,7 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		},
 		{
 			name: "invalid to_address",
-			req: &grpc.BuildSignRawDataRequest{
+			req: &txbuilder.BuildSignRawDataRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -260,7 +265,7 @@ func TestBuildSignRawData_Validation(t *testing.T) {
 		},
 		{
 			name: "amount with decimal point",
-			req: &grpc.BuildSignRawDataRequest{
+			req: &txbuilder.BuildSignRawDataRequest{
 				TraceId:     "test-trace-id",
 				ChainCode:   "ethereum",
 				Coin:        "eth",
@@ -291,12 +296,12 @@ func TestTxBroadcast_Validation(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		req     *grpc.TxBroadcastRequest
+		req     *txbuilder.TxBroadcastRequest
 		wantErr bool
 	}{
 		{
 			name: "missing trace_id",
-			req: &grpc.TxBroadcastRequest{
+			req: &txbuilder.TxBroadcastRequest{
 				TraceId:   "",
 				RawData:   "0xf86c018504a817c80082520894d8da6bf26964af9d7eed9e03e53415d37aa960458088016345785d8a0000801ca0798c92bfb0d1dfccba6f0912a8f03d9e1bdfef5ee3de0bd67c7c5b97425d38b6a05a0c8b63e2c3d5e3f4f3e4f5f6f7f8f9fafbfcfdfeff0f1f2f3f4f5f6f7f8f9fafbfc",
 				Signature: "abcd1234",
@@ -305,7 +310,7 @@ func TestTxBroadcast_Validation(t *testing.T) {
 		},
 		{
 			name: "missing raw_data",
-			req: &grpc.TxBroadcastRequest{
+			req: &txbuilder.TxBroadcastRequest{
 				TraceId:   "test-trace-id",
 				RawData:   "",
 				Signature: "abcd1234",
@@ -314,7 +319,7 @@ func TestTxBroadcast_Validation(t *testing.T) {
 		},
 		{
 			name: "raw_data too long",
-			req: &grpc.TxBroadcastRequest{
+			req: &txbuilder.TxBroadcastRequest{
 				TraceId:   "test-trace-id",
 				RawData:   string(make([]byte, 4097)),
 				Signature: "abcd1234",
@@ -455,5 +460,202 @@ func TestBuildERC20TransferData(t *testing.T) {
 		if data[4+i] != 0 {
 			t.Errorf("buildERC20TransferData() padding[%d] = %x, want 0", i, data[4+i])
 		}
+	}
+}
+
+func TestConvertAddress_Validation(t *testing.T) {
+	cfg := &config.Config{}
+	config.SetConfigForTest(cfg)
+
+	svc := &TxBuilderService{}
+
+	validPEM := generateTestSecp256k1PEM(t)
+
+	tests := []struct {
+		name    string
+		req     *txbuilder.ConvertAddressRequest
+		wantErr bool
+	}{
+		{
+			name: "missing trace_id",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "",
+				Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: validPEM}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "trace_id too long (>36)",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: strings.Repeat("a", 37),
+				Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: validPEM}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty keys",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "trace-001",
+				Keys:    []*txbuilder.PublicKeysRequest{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "keys length > 100",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "trace-001",
+				Keys:    generateKeys(101, validPEM),
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty pkix_pubkey_pem",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "trace-001",
+				Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: ""}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "whitespace-only pkix_pubkey_pem",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "trace-001",
+				Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: "   "}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "pkix_pubkey_pem too long (>4096)",
+			req: &txbuilder.ConvertAddressRequest{
+				TraceId: "trace-001",
+				Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: strings.Repeat("a", 4097)}},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.ConvertAddress(context.Background(), tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ConvertAddress() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestConvertAddress_Success(t *testing.T) {
+	cfg := &config.Config{}
+	config.SetConfigForTest(cfg)
+
+	svc := &TxBuilderService{}
+
+	// Generate a real secp256k1 key and derive the expected address.
+	privKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("crypto.GenerateKey failed: %v", err)
+	}
+	pubKey := privKey.Public().(*ecdsa.PublicKey)
+	expectedAddr := crypto.PubkeyToAddress(*pubKey)
+
+	validPEM, err := ethereum.MarshalPublicKeyToPKIXPEM(pubKey)
+	if err != nil {
+		t.Fatalf("MarshalPublicKeyToPKIXPEM failed: %v", err)
+	}
+
+	req := &txbuilder.ConvertAddressRequest{
+		TraceId: "trace-001",
+		Keys: []*txbuilder.PublicKeysRequest{
+			{AccountIndex: 0, PkixPubkeyPem: validPEM},
+			{AccountIndex: 5, PkixPubkeyPem: validPEM},
+		},
+	}
+
+	resp, err := svc.ConvertAddress(context.Background(), req)
+	if err != nil {
+		t.Fatalf("ConvertAddress() unexpected error: %v", err)
+	}
+
+	if len(resp.Keys) != 2 {
+		t.Fatalf("ConvertAddress() returned %d keys, want 2", len(resp.Keys))
+	}
+
+	for _, key := range resp.Keys {
+		if !ethereum.ValidateAddress(key.Address) {
+			t.Errorf("ConvertAddress() returned invalid Ethereum address: %q", key.Address)
+		}
+		if key.AccountIndex != 0 && key.AccountIndex != 5 {
+			t.Errorf("ConvertAddress() unexpected account_index: %d", key.AccountIndex)
+		}
+		// Each result should be the same derived address (same PEM input).
+		if key.Address != expectedAddr.Hex() {
+			t.Errorf("ConvertAddress() address = %q, want %q", key.Address, expectedAddr.Hex())
+		}
+	}
+}
+
+func TestConvertAddress_InvalidPEM(t *testing.T) {
+	cfg := &config.Config{}
+	config.SetConfigForTest(cfg)
+
+	svc := &TxBuilderService{}
+
+	req := &txbuilder.ConvertAddressRequest{
+		TraceId: "trace-001",
+		Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: "not-a-valid-pem"}},
+	}
+
+	_, err := svc.ConvertAddress(context.Background(), req)
+	if err == nil {
+		t.Error("ConvertAddress() expected error for invalid PEM, got nil")
+	}
+}
+
+func generateTestSecp256k1PEM(t *testing.T) string {
+	t.Helper()
+	privKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("crypto.GenerateKey failed: %v", err)
+	}
+	pubKey := privKey.Public().(*ecdsa.PublicKey)
+	pemStr, err := ethereum.MarshalPublicKeyToPKIXPEM(pubKey)
+	if err != nil {
+		t.Fatalf("MarshalPublicKeyToPKIXPEM failed: %v", err)
+	}
+	return pemStr
+}
+
+func generateKeys(n int, pemStr string) []*txbuilder.PublicKeysRequest {
+	keys := make([]*txbuilder.PublicKeysRequest, n)
+	for i := 0; i < n; i++ {
+		keys[i] = &txbuilder.PublicKeysRequest{AccountIndex: uint32(i), PkixPubkeyPem: pemStr}
+	}
+	return keys
+}
+
+func TestConvertAddress_NonSecp256k1Key(t *testing.T) {
+	cfg := &config.Config{}
+	config.SetConfigForTest(cfg)
+
+	svc := &TxBuilderService{}
+
+	// Generate a P-256 (NIST P-256) key, not secp256k1.
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+	pemStr, err := ethereum.MarshalPublicKeyToPKIXPEM(&privKey.PublicKey)
+	if err != nil {
+		t.Fatalf("MarshalPublicKeyToPKIXPEM failed: %v", err)
+	}
+
+	req := &txbuilder.ConvertAddressRequest{
+		TraceId: "trace-001",
+		Keys:    []*txbuilder.PublicKeysRequest{{AccountIndex: 0, PkixPubkeyPem: pemStr}},
+	}
+
+	_, err = svc.ConvertAddress(context.Background(), req)
+	if err == nil {
+		t.Error("ConvertAddress() expected error for non-secp256k1 key, got nil")
 	}
 }

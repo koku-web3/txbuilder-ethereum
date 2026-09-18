@@ -3,15 +3,16 @@ package service
 import (
 	"context"
 	"encoding/hex"
+	std_errors "errors"
 	"fmt"
 	"math/big"
 	"net"
 	"strings"
 
 	log "github.com/koku-web3/logko"
-	"github.com/koku-web3/txbuilder-ethereum/grpc"
+	txbuilder "github.com/koku-web3/txbuilder-ethereum/grpc"
 	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
-	"github.com/pkg/errors"
+	pkg_errors "github.com/pkg/errors"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
@@ -25,7 +26,7 @@ const (
 // TxBuilderService Ethereum 交易构建服务
 // 负责验证地址、检查余额、构建交易签名数据、广播交易
 type TxBuilderService struct {
-	grpc.UnimplementedTxBuilderServer
+	txbuilder.UnimplementedTxBuilderServer
 	rpc *ethereum.RPCClient // Ethereum JSON-RPC 客户端
 }
 
@@ -62,7 +63,7 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 
 	// 创建 gRPC 服务器实例
 	s.grpcSrv = ggrpc.NewServer()
-	grpc.RegisterTxBuilderServer(s.grpcSrv, NewTxBuilderService())
+	txbuilder.RegisterTxBuilderServer(s.grpcSrv, NewTxBuilderService())
 	// 注册 reflection 用于调试工具（如 grpcurl、Postman gRPC）
 	reflection.Register(s.grpcSrv)
 
@@ -114,28 +115,76 @@ func (s *TxBuilderService) verifyAddress(ctx context.Context, methodName, traceI
 
 // VerifyAddress 验证普通以太坊地址格式（EOA 地址）
 // 返回地址是否合法（0x 开头 + 40 位十六进制字符）
-func (s *TxBuilderService) VerifyAddress(ctx context.Context, req *grpc.VerifyAddressRequest) (*grpc.VerifyAddressResponse, error) {
+func (s *TxBuilderService) VerifyAddress(ctx context.Context, req *txbuilder.VerifyAddressRequest) (*txbuilder.VerifyAddressResponse, error) {
 	isValid, err := s.verifyAddress(ctx, "VerifyAddress", req.TraceId, req.Address, ethereum.ValidateAddress)
 	if err != nil {
 		return nil, err
 	}
-	return &grpc.VerifyAddressResponse{IsValid: isValid}, nil
+	return &txbuilder.VerifyAddressResponse{IsValid: isValid}, nil
 }
 
 // VerifyContractAddress 验证智能合约地址格式
 // 智能合约地址与普通地址格式相同（0x 开头 + 40 位十六进制），但需要通过 eth_call 验证合约是否存在
-func (s *TxBuilderService) VerifyContractAddress(ctx context.Context, req *grpc.VerifyContractAddressRequest) (*grpc.VerifyContractAddressResponse, error) {
+func (s *TxBuilderService) VerifyContractAddress(ctx context.Context, req *txbuilder.VerifyContractAddressRequest) (*txbuilder.VerifyContractAddressResponse, error) {
 	isValid, err := s.verifyAddress(ctx, "VerifyContractAddress", req.TraceId, req.Address, ethereum.ValidateContractAddress)
 	if err != nil {
 		return nil, err
 	}
-	return &grpc.VerifyContractAddressResponse{IsValid: isValid}, nil
+	return &txbuilder.VerifyContractAddressResponse{IsValid: isValid}, nil
+}
+
+// ConvertAddress 将 PEM-encoded PKIX 格式公钥转换为 Ethereum 地址
+func (s *TxBuilderService) ConvertAddress(ctx context.Context, req *txbuilder.ConvertAddressRequest) (*txbuilder.ConvertAddressResponse, error) {
+	log.Info("[ConvertAddress] received request", "trace_id", req.TraceId, "keys_count", len(req.Keys))
+
+	if err := s.validateConvertAddress(req); err != nil {
+		log.Warn("[ConvertAddress] validation failed", "trace_id", req.TraceId, "error", err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	results := make([]*txbuilder.PublicKeysResponse, 0, len(req.Keys))
+	for _, key := range req.Keys {
+		addr, err := ethereum.PublicKeyPEMToAddress(key.PkixPubkeyPem)
+		if err != nil {
+			log.Warn("[ConvertAddress] failed to convert public key", "trace_id", req.TraceId, "account_index", key.AccountIndex, "pem_length", len(key.PkixPubkeyPem), "error", err.Error())
+			return nil, status.Errorf(codes.InvalidArgument, "failed to convert public key at account_index %d: %s", key.AccountIndex, err.Error())
+		}
+		results = append(results, &txbuilder.PublicKeysResponse{
+			AccountIndex: key.AccountIndex,
+			Address:      addr,
+		})
+	}
+
+	log.Info("[ConvertAddress] returning response", "trace_id", req.TraceId, "success_count", len(results))
+
+	return &txbuilder.ConvertAddressResponse{Keys: results}, nil
+}
+
+func (*TxBuilderService) validateConvertAddress(req *txbuilder.ConvertAddressRequest) error {
+	if req.TraceId == "" || len(req.TraceId) > 36 {
+		return std_errors.New("trace_id is required and must be 1-36 characters")
+	}
+	if len(req.Keys) == 0 {
+		return std_errors.New("keys is required and must not be empty")
+	}
+	if len(req.Keys) > 100 {
+		return std_errors.New("keys length exceeds maximum of 100")
+	}
+	for _, key := range req.Keys {
+		if strings.TrimSpace(key.PkixPubkeyPem) == "" {
+			return std_errors.New("pkix_pubkey_pem is required and must not be empty")
+		}
+		if len(key.PkixPubkeyPem) > 4096 {
+			return std_errors.New("pkix_pubkey_pem exceeds maximum length of 4096 characters")
+		}
+	}
+	return nil
 }
 
 // CheckSufficientBalance 检查地址余额是否足够
 // - is_basic_coin=true: 检查 ETH 余额是否 >= 转账金额
 // - is_basic_coin=false: 先检查 ETH 余额是否足够支付 Gas，再检查 Token 余额是否 >= 转账金额
-func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc.CheckSufficientBalanceRequest) (*grpc.CheckSufficientBalanceResponse, error) {
+func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbuilder.CheckSufficientBalanceRequest) (*txbuilder.CheckSufficientBalanceResponse, error) {
 	if err := s.validateCheckSufficientBalance(req); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -174,7 +223,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 	// 如果只是想知道主链币余额是否，直接返回
 	if !isContract {
 		log.Info("[CheckSufficientBalance] basic coin balance check result", "trace_id", req.TraceId, "balance", balance.String(), "required_amount", amountInt.String(), "is_coin_sufficient", isCoinSufficient)
-		return &grpc.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient}, nil
+		return &txbuilder.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient}, nil
 	}
 
 	// 继续执行查询合约余额是否足够的逻辑
@@ -201,10 +250,10 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *grpc
 
 	log.Info("[CheckSufficientBalance] token balance check result", "trace_id", req.TraceId, "token_balance", tokenBalance.String(), "balance", amountInt.String(), "is_coin_sufficient", isCoinSufficient, "is_token_sufficient", isTokenSufficient)
 
-	return &grpc.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient, IsTokenSufficient: isTokenSufficient}, nil
+	return &txbuilder.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient, IsTokenSufficient: isTokenSufficient}, nil
 }
 
-func (*TxBuilderService) validateCheckSufficientBalance(req *grpc.CheckSufficientBalanceRequest) error {
+func (*TxBuilderService) validateCheckSufficientBalance(req *txbuilder.CheckSufficientBalanceRequest) error {
 	log.Info("[CheckSufficientBalance] received request",
 		"trace_id", req.TraceId,
 		"chain_code", req.ChainCode,
@@ -255,7 +304,7 @@ func (*TxBuilderService) validateCheckSufficientBalance(req *grpc.CheckSufficien
 	return nil
 }
 
-func (s *TxBuilderService) validateBuildSignRawData(req *grpc.BuildSignRawDataRequest) error {
+func (s *TxBuilderService) validateBuildSignRawData(req *txbuilder.BuildSignRawDataRequest) error {
 	log.Info("[BuildSignRawData] received request",
 		"trace_id", req.TraceId,
 		"chain_code", req.ChainCode,
@@ -361,7 +410,7 @@ func (s *TxBuilderService) getBasicCoinBalance(ctx context.Context, address stri
 			"address", address,
 			"error", err,
 		)
-		return nil, errors.Wrap(err, "failed to get balance from node")
+		return nil, pkg_errors.Wrap(err, "failed to get balance from node")
 	}
 
 	log.Debug("[getBasicCoinBalance] got balance from node",
@@ -403,7 +452,7 @@ func (s *TxBuilderService) getTokenBalance(ctx context.Context, owner, contract 
 			"contract", contract,
 			"error", err,
 		)
-		return big.NewInt(0), errors.Wrap(err, "failed to call contract")
+		return big.NewInt(0), pkg_errors.Wrap(err, "failed to call contract")
 	}
 
 	result = strings.TrimPrefix(result, "0x")
@@ -444,7 +493,7 @@ func (s *TxBuilderService) getEip1559TxFee(ctx context.Context, isContract bool,
 	gasFeeCap, err := s.rpc.SuggestGasFeeCap(ctx)
 	if err != nil {
 		log.Error("[getEip1559TxFee] failed to get gas fee cap", "error", err)
-		return nil, errors.Wrap(err, "failed to get gas fee cap")
+		return nil, pkg_errors.Wrap(err, "failed to get gas fee cap")
 	}
 
 	// gasTipCap = maxPriorityFeePerGas（小费）
@@ -568,7 +617,7 @@ func padAmountTo32Bytes(amount *big.Int) []byte {
 func parseAmount(amount string) (*big.Int, error) {
 	amountInt, ok := new(big.Int).SetString(amount, 10)
 	if !ok {
-		return nil, errors.New("invalid amount format")
+		return nil, std_errors.New("invalid amount format")
 	}
 	return amountInt, nil
 }

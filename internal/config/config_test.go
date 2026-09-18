@@ -14,7 +14,7 @@ chain_id = 11155111
 
 [grpc]
 host = "127.0.0.1"
-port = 50052
+port = 51051
 
 [log]
 rotation = true
@@ -69,8 +69,8 @@ vmodule = ""
 	if cfg.GRPC.Host != "127.0.0.1" {
 		t.Errorf("GRPC.Host = %v, want %v", cfg.GRPC.Host, "127.0.0.1")
 	}
-	if cfg.GRPC.Port != 50052 {
-		t.Errorf("GRPC.Port = %v, want %v", cfg.GRPC.Port, 50052)
+	if cfg.GRPC.Port != 51051 {
+		t.Errorf("GRPC.Port = %v, want %v", cfg.GRPC.Port, 51051)
 	}
 
 	if !cfg.Log.Rotation {

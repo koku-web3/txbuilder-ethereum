@@ -1,17 +1,8 @@
 # Build stage
-FROM golang:1.26-bookworm AS builder
-
-# Set proxy for build
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ENV http_proxy=$HTTP_PROXY
-ENV https_proxy=$HTTPS_PROXY
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache git ca-certificates
 
 # Set working directory
 WORKDIR /app
@@ -27,20 +18,16 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o txbuilder-ethereum ./cmd/txbuilder-ethereum/
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM alpine:3.19
 
 # Install CA certificates for HTTPS calls
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    tzdata \
-    netcat \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk --no-cache add ca-certificates tzdata
 
 # Set timezone
 ENV TZ=Asia/Shanghai
 
 # Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN adduser -D -g '' appuser
 
 # Set working directory
 WORKDIR /app
@@ -58,11 +45,11 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # Expose gRPC port
-EXPOSE 50052
+EXPOSE 51051
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD nc -z 127.0.0.1 50052 || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:51051/Health || exit 1
 
 # Run the application
 ENTRYPOINT ["./txbuilder-ethereum"]

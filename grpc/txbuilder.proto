@@ -1,11 +1,14 @@
 syntax = "proto3";
 
-package chain;
+package txbuilder;
 
-option go_package = "github.com/koku-web3/txbuilder-ethereum/grpc;grpc";
+option go_package = "github.com/koku-web3/go-koku/pkg/proto/txbuilder;txbuilder";
 
 // TxBuilder service provides transaction construction APIs
 service TxBuilder {
+  // Convert PEM-encoded public keys to Ethereum addresses
+  rpc ConvertAddress(ConvertAddressRequest) returns (ConvertAddressResponse);
+
   // Verify if an address is valid
   rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
 
@@ -45,6 +48,26 @@ message VerifyContractAddressRequest {
 
 message VerifyContractAddressResponse {
   bool is_valid = 1;
+}
+
+// ConvertAddress
+message ConvertAddressRequest {
+  string trace_id = 1; // 1-36 必填
+  repeated PublicKeysRequest keys = 2;
+}
+
+message PublicKeysRequest {
+  uint32 account_index = 1;
+  string pkix_pubkey_pem = 2; // 必填；PKIX 标准的公钥，PEM 格式
+}
+
+message ConvertAddressResponse {
+  repeated PublicKeysResponse keys = 1;
+}
+
+message PublicKeysResponse {
+  uint32 account_index = 1;
+  string address = 2; // Ethereum 地址（0x + 40 hex，包含 EIP-55 校验位）
 }
 
 // CheckSufficientBalance
