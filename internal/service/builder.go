@@ -21,7 +21,7 @@ import (
 //  1. 验证请求参数（biz_id, 地址, 金额等）
 //  2. 根据 is_basic_coin 判断是原生币（ETH）还是 Token 转账
 //  3. 获取 nonce 和 gas price
-//  4. 构建交易并计算签名哈希（EIP-155）
+//  4. 构建交易并计算签名哈希（EIP-1559）
 //  5. 返回 msg（待签名哈希）和 raw_data（RLP 编码的原始交易数据）
 //
 // 返回值：
@@ -142,6 +142,7 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 		"gas", tx.Gas(),
 		"chain_id", tx.ChainId(),
 		"msg", msg,
+		"row_data", hex.EncodeToString(rawData),
 	)
 
 	return msg, hex.EncodeToString(rawData), nil

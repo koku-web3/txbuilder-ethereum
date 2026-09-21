@@ -138,22 +138,23 @@ rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficie
 
 | 字段            | 类型     | 说明                                     |
 | ------------- | ------ | -------------------------------------- |
-| trace_id      | string | 追踪 ID（必填）                              |
-| chain_code    | string | 链码，如 "ethereum"、"sepolia"                   |
-| coin          | string | 币种 ID                                  |
-| from_address  | string | 发送方地址（0x 开头）                            |
-| amount        | string | 转账金额（ETH 单位为 wei，代币为最小单位）              |
-| contract      | string | 代币合约地址      |
+| trace_id   | string | 追踪 ID（必填，1-36 字符）                       |
+| chain_code | string | 链码（必填，1-36 字符），如 "ethereum"、"sepolia"      |
+| coin       | string | 币种 ID（必填，1-36 字符）                       |
+| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）                |
+| amount       | string | 转账金额（必填，纯数字字符串，单位为 wei）              |
+| contract     | string | 代币合约地址（非必填，1-256 字符；空串表示主链币 ETH） |
 
 **响应：**
 
-| 字段            | 类型   | 说明     |
-| ------------- | ---- | ------ |
-| is_sufficient | bool | 余额是否充足 |
+| 字段                 | 类型   | 说明                                                                 |
+| ------------------ | ---- | ------------------------------------------------------------------ |
+| is_coin_sufficient | bool | 主链币（如 ETH）余额是否足够转账                                       |
+| is_token_sufficient | bool | 代币余额是否足够（当 contract 非空时需要同时判断两个字段）                  |
 
 ### 5. BuildSignRawData
 
-构造待签名的交易原始数据（RLP 编码）。
+构造待签名的交易原始数据（RLP 编码）。根据 `contract` 字段判断转账类型：空串构造 ETH 转账，非空构造 ERC-20 代币转账。
 
 ```protobuf
 rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse);
@@ -163,21 +164,21 @@ rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse)
 
 | 字段            | 类型     | 说明                                |
 | ------------- | ------ | --------------------------------- |
-| trace_id      | string | 业务根据 ID（必填，最多 36 字符）                |
-| chain_code    | string | 链码，如 "ethereum"                              |
-| coin          | string | 币种 ID                             |
-| coin_symbol   | string | 代币符号                              |
-| from_address  | string | 发送方地址（0x 开头）                           |
-| to_address    | string | 接收方地址（0x 开头）                           |
-| amount        | string | 金额（必须是纯数字字符串，单位为 wei）                 |
-| contract      | string | 代币合约地址 |
+| trace_id     | string | 业务追踪 ID（必填，1-36 字符）                      |
+| chain_code   | string | 链码（必填，1-36 字符）                           |
+| coin         | string | 币种 ID（必填，1-36 字符）                       |
+| coin_symbol  | string | 代币符号（必填，1-36 字符）                       |
+| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）                |
+| to_address   | string | 接收方地址（必填，1-256 字符，0x 开头）                |
+| amount       | string | 金额（必填，纯数字字符串，单位为 wei）                  |
+| contract     | string | 代币合约地址（非必填，1-256 字符；空串表示主链币 ETH） |
 
 **响应：**
 
-| 字段      | 类型     | 说明                                    |
-| ------- | ------ | ------------------------------------- |
-| msg     | string | Keccak-256 哈希（十六进制字符串，用于签名）        |
-| raw_data | string | 未签名 RLP 编码交易（十六进制字符串），用于 Coordinator 签名 |
+| 字段      | 类型     | 说明                                        |
+| ------- | ------ | ----------------------------------------- |
+| msg     | string | Keccak-256 哈希（十六进制字符串，EIP-1559 签名消息）    |
+| raw_data | string | 未签名 RLP 编码交易（十六进制字符串），由 Coordinator 签名后用于广播 |
 
 ### 6. TxBroadcast
 
@@ -209,7 +210,7 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 ```toml
 [chain]
 chain_code = "ethereum"
-rpc_url = "https://rpc.sepolia.org"
+rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
 chain_id = 11155111
 
 [grpc]
@@ -224,7 +225,7 @@ max_backups = 10
 max_age = 30
 compress = true
 format = "terminal"
-verbosity = 3
+verbosity = 5
 vmodule = ""
 ```
 
@@ -249,13 +250,13 @@ grpcurl -plaintext -d '{
   "keys": [
     {"account_index": 0, "pkix_pubkey_pem": "-----BEGIN PUBLIC KEY-----\nMFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAE...\n-----END PUBLIC KEY-----\n"}
   ]
-}' localhost:51051 chain.TxBuilder/ConvertAddress
+}' localhost:51051 txbuilder.TxBuilder/ConvertAddress
 
 # 验证地址
 grpcurl -plaintext -d '{
   "trace_id": "test-001",
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-}' localhost:51051 chain.TxBuilder/VerifyAddress
+}' localhost:51051 txbuilder.TxBuilder/VerifyAddress
 
 # 检查余额（ETH）
 grpcurl -plaintext -d '{
@@ -264,7 +265,7 @@ grpcurl -plaintext -d '{
   "coin": "eth",
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "amount": "1000000000000000"
-}' localhost:51051 chain.TxBuilder/CheckSufficientBalance
+}' localhost:51051 txbuilder.TxBuilder/CheckSufficientBalance
 
 # 构造 ETH 转账交易
 grpcurl -plaintext -d '{
@@ -275,7 +276,7 @@ grpcurl -plaintext -d '{
   "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
   "to_address": "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
   "amount": "1000000000000000"
-}' localhost:51051 chain.TxBuilder/BuildSignRawData
+}' localhost:51051 txbuilder.TxBuilder/BuildSignRawData
 # 响应示例: {"msg": "...", "raw_data": "..."}
 
 # 广播已签名的交易（raw_data 包含签名）
@@ -283,7 +284,7 @@ grpcurl -plaintext -d '{
   "trace_id": "broadcast-001",
   "raw_data": "0xf86c018504a817c80082520894d8da6bf26964af9d7eed9e03e53415d37aa960458088016345785d8a0000801ca0798c92bfb0d1dfccba6f0912a8f03d9e1bdfef5ee3de0bd67c7c5b97425d38b6",
   "signature": ""
-}' localhost:51051 chain.TxBuilder/TxBroadcast
+}' localhost:51051 txbuilder.TxBuilder/TxBroadcast
 ```
 
 ### Go 客户端示例
@@ -322,14 +323,14 @@ func main() {
 
 	// 构造 ETH 转账
 	txResp, err := client.BuildSignRawData(ctx, &grpc.BuildSignRawDataRequest{
-		TraceId:       "tx-001",
-		ChainCode:   "ethereum",
-		CoinId:      "eth",
-		IsBasicCoin: true,
-		CoinSymbol:  "ETH",
-		FromAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-		ToAddress:   "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
-		Amount:      "1000000000000000",
+		TraceId:      "tx-001",
+		ChainCode:    "ethereum",
+		Coin:         "eth",
+		CoinSymbol:   "ETH",
+		FromAddress:  "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+		ToAddress:    "0xAb5801a7D398351b8bE11C439e05C5B3259aeC9b",
+		Amount:       "1000000000000000",
+		Contract:     "", // 空串表示主链币 ETH；非空则为代币合约地址
 	})
 	if err != nil {
 		panic(err)
@@ -429,5 +430,5 @@ docker compose logs -f txbuilder-ethereum
 grpcurl -plaintext -d '{
   "trace_id": "test-001",
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
-}' localhost:51051 chain.TxBuilder/VerifyAddress
+}' localhost:51051 txbuilder.TxBuilder/VerifyAddress
 ```

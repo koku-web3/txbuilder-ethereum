@@ -98,7 +98,7 @@ message BuildSignRawDataRequest {
 }
 
 message BuildSignRawDataResponse {
-  string msg = 1; // SHA256(raw_data) - 待签名内容
+  string msg = 1; // Keccak-256(raw_data) - 待签名内容（EIP-1559 签名哈希）
   string raw_data = 2; // 原始交易数据 (hex 编码) - Coordinator 用于构造完整交易
 }
 
