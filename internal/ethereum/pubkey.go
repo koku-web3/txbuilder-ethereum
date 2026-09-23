@@ -61,7 +61,7 @@ func PublicKeyPEMToAddress(pemStr string) (string, error) {
 	}
 
 	addr := crypto.PubkeyToAddress(*ecdsaPub)
-	return addr.Hex(), nil
+	return ConvertToChecksumAddress(addr.Hex()), nil
 }
 
 // MarshalPublicKeyToPKIXPEM marshals a secp256k1 ECDSA public key to PKIX PEM format.

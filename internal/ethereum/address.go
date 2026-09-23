@@ -3,6 +3,12 @@ package ethereum
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/crypto"
+)
+
+const (
+	addressLen = 40
 )
 
 func ValidateAddress(address string) bool {
@@ -123,4 +129,85 @@ func AddressToHex(address []byte) string {
 		result[i*2+3] = hexChars[b&0x0f]
 	}
 	return string(result)
+}
+
+// IsEIP55Format 检查地址是否使用 EIP-55 混合大小写校验和格式。
+// 如果十六进制部分同时包含大写和小写字母，则返回 true。
+func IsEIP55Format(address string) bool {
+	if len(address) < 2 || address[:2] != "0x" {
+		return false
+	}
+	hexPart := address[2:]
+	if len(hexPart) != addressLen {
+		return false
+	}
+	hasUpper := false
+	hasLower := false
+	for _, c := range hexPart {
+		if c >= 'A' && c <= 'F' {
+			hasUpper = true
+		}
+		if c >= 'a' && c <= 'f' {
+			hasLower = true
+		}
+		if hasUpper && hasLower {
+			return true
+		}
+	}
+	return false
+}
+
+// ConvertToChecksumAddress 将小写地址转换为 EIP-55 校验和格式。
+// 地址必须是有效的以太坊地址（0x 前缀 + 40 位十六进制字符）。
+// 返回带混合大小写校验和编码的地址。
+//
+// EIP-55 算法逻辑：
+// 1. 将地址转为小写（不含 0x 前缀）
+// 2. 用 Keccak-256 对小写地址字符串进行哈希
+// 3. 遍历地址的每个字符，如果是对应哈希 nibble >= 8 的字母，则大写
+// 示例：0xd8da6bf26964af9d7eed9e03e53415d37aa96045
+//
+//	→ 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045
+func ConvertToChecksumAddress(address string) string {
+	if len(address) < 2 || address[:2] != "0x" {
+		return address
+	}
+	hexPart := address[2:]
+	if len(hexPart) != addressLen {
+		return address
+	}
+
+	// 对小写十六进制地址（不含 0x 前缀）进行哈希
+	hash := crypto.Keccak256([]byte(strings.ToLower(hexPart)))
+
+	result := make([]byte, 42)
+	copy(result[:2], address[:2])
+
+	for i := 0; i < addressLen; i++ {
+		addrChar := hexPart[i]
+		hashByte := hash[i/2]
+		if i%2 == 0 {
+			hashByte = hashByte >> 4
+		} else {
+			hashByte &= 0x0f
+		}
+		// 只有当字符是字母且对应哈希 nibble > 7 时才大写
+		if addrChar >= 'a' && addrChar <= 'f' && hashByte > 7 {
+			result[i+2] = addrChar - 32
+		} else {
+			result[i+2] = addrChar
+		}
+	}
+	return string(result)
+}
+
+// VerifyChecksum 验证 EIP-55 校验和地址是否正确。
+// 如果地址不是 EIP-55 格式（全小写或全大写），则返回 true（无需校验）。
+// 如果校验和不匹配则返回 false。
+func VerifyChecksum(address string) bool {
+	if !IsEIP55Format(address) {
+		return true
+	}
+	checksummed := ConvertToChecksumAddress(address)
+	return checksummed == address
 }

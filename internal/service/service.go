@@ -78,7 +78,7 @@ func (s *GRPCServer) Start(ctx context.Context) error {
 
 // verifyAddress 验证地址的通用逻辑
 // validateFn 是具体的验证函数（如 ValidateAddress 或 ValidateContractAddress）
-func (s *TxBuilderService) verifyAddress(ctx context.Context, methodName, traceId, address string, validateFn func(string) bool) (bool, error) {
+func (s *TxBuilderService) verifyAddress(methodName, traceId, address string, validateFn func(string) bool) (bool, error) {
 	if traceId == "" {
 		log.Warn("["+methodName+"] Missing trace_id", "trace_id", traceId, "address", address)
 		return false, status.Error(codes.InvalidArgument, "trace_id is required")
@@ -93,19 +93,30 @@ func (s *TxBuilderService) verifyAddress(ctx context.Context, methodName, traceI
 }
 
 // VerifyAddress 验证普通以太坊地址格式（EOA 地址）
-// 返回地址是否合法（0x 开头 + 40 位十六进制字符）
+// 支持 EIP-55 校验和格式验证：
+// - 如果地址是 EIP-55 格式（混合大小写），则验证校验和是否正确
+// - 如果地址是纯小写或纯大写，则只验证基本格式
 func (s *TxBuilderService) VerifyAddress(ctx context.Context, req *txbuilder.VerifyAddressRequest) (*txbuilder.VerifyAddressResponse, error) {
-	isValid, err := s.verifyAddress(ctx, "VerifyAddress", req.TraceId, req.Address, ethereum.ValidateAddress)
+	isValid, err := s.verifyAddress("VerifyAddress", req.TraceId, req.Address, ethereum.ValidateAddress)
 	if err != nil {
 		return nil, err
 	}
+	if !isValid {
+		return &txbuilder.VerifyAddressResponse{IsValid: false}, nil
+	}
+
+	// 如果地址是 EIP-55 格式，验证校验和
+	if ethereum.IsEIP55Format(req.Address) {
+		isValid = ethereum.VerifyChecksum(req.Address)
+	}
+
 	return &txbuilder.VerifyAddressResponse{IsValid: isValid}, nil
 }
 
 // VerifyContractAddress 验证智能合约地址格式
 // 智能合约地址与普通地址格式相同（0x 开头 + 40 位十六进制），但需要通过 eth_call 验证合约是否存在
 func (s *TxBuilderService) VerifyContractAddress(ctx context.Context, req *txbuilder.VerifyContractAddressRequest) (*txbuilder.VerifyContractAddressResponse, error) {
-	isValid, err := s.verifyAddress(ctx, "VerifyContractAddress", req.TraceId, req.Address, ethereum.ValidateContractAddress)
+	isValid, err := s.verifyAddress("VerifyContractAddress", req.TraceId, req.Address, ethereum.ValidateContractAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -163,12 +174,17 @@ func (*TxBuilderService) validateConvertAddress(req *txbuilder.ConvertAddressReq
 // CheckSufficientBalance 检查地址余额是否足够
 // - is_basic_coin=true: 检查 ETH 余额是否 >= 转账金额
 // - is_basic_coin=false: 先检查 ETH 余额是否足够支付 Gas，再检查 Token 余额是否 >= 转账金额
+//
+// 注意：根据 proto 定义，amount 参数已经是链上最小单位（如以太坊是 wei），
+//
+//	因此 balanceOf 返回的链上单位可直接与 amount 比较，无需 decimals 转换
 func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbuilder.CheckSufficientBalanceRequest) (*txbuilder.CheckSufficientBalanceResponse, error) {
 	if err := s.validateCheckSufficientBalance(req); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	isContract := req.Contract != ""
+
 	amountInt, err := parseAmount(req.Amount)
 	if err != nil {
 		log.Warn("[CheckSufficientBalance] Invalid amount format", "trace_id", req.TraceId, "amount", req.Amount, "error", err)
@@ -181,16 +197,20 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 		return nil, status.Errorf(codes.Internal, "failed to get balance: %v", err)
 	}
 
-	calldata := hex.EncodeToString(buildERC20TransferData(req.FromAddress, amountInt))
+	var calldata string
+	if isContract {
+		calldata = hex.EncodeToString(buildERC20TransferData(req.FromAddress, amountInt))
+	}
+
 	fee, err := s.getEip1559TxFee(ctx, isContract, req.FromAddress, req.Contract, calldata)
 	if err != nil {
 		log.Error("[CheckSufficientBalance] Failed to get fee", "trace_id", req.TraceId, "error", err)
 		return nil, status.Errorf(codes.Internal, "failed to get fee: %v", err)
 	}
 
-	isCoinSufficient := balance.Cmp(new(big.Int).Add(amountInt, fee)) >= 0
-
 	if !isContract {
+		// 原生币转账：余额需要 >= 金额 + 手续费
+		isCoinSufficient := balance.Cmp(new(big.Int).Add(amountInt, fee)) >= 0
 		log.Info("[CheckSufficientBalance] Balance check result", "trace_id", req.TraceId, "balance", balance.String(), "required", new(big.Int).Add(amountInt, fee).String(), "is_coin_sufficient", isCoinSufficient)
 		return &txbuilder.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient}, nil
 	}
@@ -199,7 +219,8 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 		return nil, status.Error(codes.InvalidArgument, "invalid contract format")
 	}
 
-	isCoinSufficient = balance.Cmp(fee) >= 0
+	// Token 转账：只需检查 ETH 余额是否足够支付 Gas
+	isCoinSufficient := balance.Cmp(fee) >= 0
 
 	tokenBalance, err := s.getTokenBalance(ctx, req.FromAddress, req.Contract)
 	if err != nil {
@@ -207,6 +228,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 		return nil, status.Errorf(codes.Internal, "failed to get token balance: %v", err)
 	}
 
+	// amount 已是链上最小单位，与 balanceOf 返回值直接比较
 	isTokenSufficient := tokenBalance.Cmp(amountInt) >= 0
 
 	log.Info("[CheckSufficientBalance] Token balance check result", "trace_id", req.TraceId, "token_balance", tokenBalance.String(), "required_amount", amountInt.String(), "is_coin_sufficient", isCoinSufficient, "is_token_sufficient", isTokenSufficient)

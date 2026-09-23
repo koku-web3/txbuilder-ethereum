@@ -25,10 +25,38 @@ func TestVerifyAddress(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			name:      "valid address",
+			name:      "valid address lowercase",
+			address:   "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			traceID:   "test-trace-id",
+			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "valid address uppercase",
+			address:   "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+			traceID:   "test-trace-id",
+			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "valid EIP-55 checksum address",
 			address:   "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
 			traceID:   "test-trace-id",
 			wantValid: true,
+			wantErr:   false,
+		},
+		{
+			name:      "invalid EIP-55 checksum - modified last char",
+			address:   "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96046",
+			traceID:   "test-trace-id",
+			wantValid: false,
+			wantErr:   false,
+		},
+		{
+			name:      "invalid EIP-55 checksum - wrong case at position 1",
+			address:   "0xd8da6BF26964aF9D7eEd9e03E53415D37aA96045",
+			traceID:   "test-trace-id",
+			wantValid: false,
 			wantErr:   false,
 		},
 		{
@@ -587,9 +615,10 @@ func TestConvertAddress_Success(t *testing.T) {
 		if key.AccountIndex != 0 && key.AccountIndex != 5 {
 			t.Errorf("ConvertAddress() unexpected account_index: %d", key.AccountIndex)
 		}
-		// Each result should be the same derived address (same PEM input).
-		if key.Address != expectedAddr.Hex() {
-			t.Errorf("ConvertAddress() address = %q, want %q", key.Address, expectedAddr.Hex())
+		// Each result should be the same derived address (same PEM input), with EIP-55 checksum.
+		expectedChecksumAddr := ethereum.ConvertToChecksumAddress(expectedAddr.Hex())
+		if key.Address != expectedChecksumAddr {
+			t.Errorf("ConvertAddress() address = %q, want %q", key.Address, expectedChecksumAddr)
 		}
 	}
 }

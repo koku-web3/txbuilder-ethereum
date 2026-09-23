@@ -12,7 +12,7 @@ Ethereum 区块链交易构造 gRPC 服务，提供地址验证、余额检查�
 
 ## 环境要求
 
-- Go 1.25+
+- Go 1.26+
 - protoc（用于编译 proto 文件）
 
 ## 目录结构
@@ -24,17 +24,13 @@ txbuilder-ethereum/
 ├── internal/
 │   ├── config/              # TOML 配置加载 & 日志初始化
 │   │   ├── config.go
-│   │   └── config_test.go
 │   ├── service/             # gRPC handler 实现
 │   │   ├── service.go
-│   │   ├── service_test.go
 │   │   ├── builder.go
 │   │   └── broadcast.go
 │   └── ethereum/            # Ethereum 相关工具
 │       ├── address.go       # 地址校验（0x + 40 hex）
-│       ├── address_test.go
 │       ├── pubkey.go       # PEM 公钥转 Ethereum 地址
-│       ├── pubkey_test.go
 │       └── rpc.go           # Ethereum 节点 JSON-RPC 客户端
 ├── grpc/
 │   ├── txbuilder.proto      # gRPC 服务和消息定义
@@ -51,7 +47,11 @@ txbuilder-ethereum/
 
 ### 1. VerifyAddress
 
-验证 Ethereum 地址（`0x` 前缀 + 40 个十六进制字符）。
+验证 Ethereum 地址（`0x` 前缀 + 40 个十六进制字符），支持 EIP-55 校验和格式验证。
+
+**验证规则：**
+- 如果地址是 EIP-55 格式（混合大小写），则验证校验和是否正确
+- 如果地址是纯小写或纯大写，则只验证基本格式
 
 ```protobuf
 rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);

@@ -92,6 +92,16 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 	toAddress := common.HexToAddress(to)
 
 	chainId := big.NewInt(int64(s.rpc.ChainID))
+	// 构建 EIP-1559 DynamicFee 交易：
+	// - ChainID: 链 ID（防重放攻击）
+	// - Nonce: 交易计数，防止重放
+	// - GasTipCap: maxPriorityFeePerGas（小费上限）
+	// - GasFeeCap: maxFeePerGas（总价格上限）
+	// - Gas: 21000（ETH 转账固定消耗）
+	// - To: 收款地址
+	// - Value: 转账金额（wei）
+	// - Data: nil（原生币转账无数据）
+	// - AccessList: nil（EIP-2930 访问列表，EIP-1559 可为空）
 	tx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:    chainId,
 		Nonce:      nonce,
@@ -104,6 +114,8 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 		AccessList: nil,
 	})
 
+	// EIP-1559 签名：使用 chainId 防止跨链重放攻击
+	// 签名哈希 = Keccak-256(RLP(nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, chainId, 0, 0))
 	signer := types.NewLondonSigner(chainId)
 	hash := signer.Hash(tx)
 
@@ -127,6 +139,7 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, amount, contract string) (string, string, error) {
 	log.Debug("[buildTokenTransaction] Building ERC20 transfer", "from", from, "to", to, "amount", amount, "contract", contract)
 
+	// amount 参数已经是链上单位（根据 proto 注释），直接解析即可
 	amountInt, err := parseAmount(amount)
 	if err != nil {
 		return "", "", errors.Wrap(err, "invalid amount")
@@ -149,22 +162,28 @@ func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, 
 		return "", "", errors.Wrap(err, "failed to get gas fee cap")
 	}
 
+	// 构建 ERC20 transfer calldata（methodID + 收款地址 + 金额）
 	data := buildERC20TransferData(to, amountInt)
+	// Data 必须是 0x 前缀的十六进制字符串，这是以太坊 RPC 要求的格式
+	dataHex := "0x" + hex.EncodeToString(data)
 
+	// 估算合约调用所需的 gasLimit（ETH 转账固定 21000，合约调用需要估算）
 	gas, err := s.rpc.EstimateGas(ctx, ethereum.CallArg{
 		From: from,
 		To:   contract,
-		Data: string(data),
+		Data: dataHex,
 	})
 	if err != nil {
-		log.Warn("[buildTokenTransaction] Gas estimation failed, using default 100000", "error", err)
-		gas = 100000
+		log.Warn("[buildTokenTransaction] Gas estimation failed, using default 100,000", "error", err)
+		gas = 100000 // 估算失败时使用默认值 100,000 gas
 	} else {
-		gas = uint64(float64(gas) * 1.2)
+		gas = uint64(float64(gas) * 1.2) // 乘以 1.2 系数避免 gas 不足
 	}
 
+	// Token 转账：value=0（代币金额在 data 中），to=合约地址
 	toAddress := common.HexToAddress(contract)
 
+	// 构建 EIP-1559 DynamicFee 交易
 	tx := types.NewTx(&types.DynamicFeeTx{
 		ChainID:    big.NewInt(int64(s.rpc.ChainID)),
 		Nonce:      nonce,
@@ -172,11 +191,12 @@ func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, 
 		GasFeeCap:  gasFeeCap,
 		Gas:        gas,
 		To:         &toAddress,
-		Value:      big.NewInt(0),
+		Value:      big.NewInt(0), // Token 转账的 ETH value 为 0
 		Data:       data,
 		AccessList: nil,
 	})
 
+	// EIP-1559 签名：使用 chainId 防止跨链重放攻击
 	signer := types.NewLondonSigner(big.NewInt(int64(s.rpc.ChainID)))
 	hash := signer.Hash(tx)
 

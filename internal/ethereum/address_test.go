@@ -263,3 +263,139 @@ func TestAddressToHex(t *testing.T) {
 		})
 	}
 }
+
+func TestIsEIP55Format(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    bool
+	}{
+		{
+			name:    "valid EIP-55 mixed case",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			want:    true,
+		},
+		{
+			name:    "valid EIP-55 mixed case vitalik",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			want:    true,
+		},
+		{
+			name:    "all lowercase",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    false,
+		},
+		{
+			name:    "all uppercase",
+			address: "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+			want:    false,
+		},
+		{
+			name:    "invalid length",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96",
+			want:    false,
+		},
+		{
+			name:    "no 0x prefix",
+			address: "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    false,
+		},
+		{
+			name:    "invalid chars",
+			address: "0xzzzz6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsEIP55Format(tt.address); got != tt.want {
+				t.Errorf("IsEIP55Format(%q) = %v, want %v", tt.address, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChecksumAddress(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    string
+	}{
+		{
+			name:    "vitalik address",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+		},
+		{
+			name:    "contract address",
+			address: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+			want:    "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+		},
+		{
+			name:    "invalid prefix",
+			address: "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    "d8da6bf26964af9d7eed9e03e53415d37aa96045",
+		},
+		{
+			name:    "invalid length",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96",
+			want:    "0xd8da6bf26964af9d7eed9e03e53415d37aa96",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ConvertToChecksumAddress(tt.address); got != tt.want {
+				t.Errorf("ChecksumAddress(%q) = %q, want %q", tt.address, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVerifyChecksum(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		want    bool
+	}{
+		{
+			name:    "valid EIP-55 checksum",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			want:    true,
+		},
+		{
+			name:    "valid EIP-55 vitalik",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+			want:    true,
+		},
+		{
+			name:    "invalid checksum - wrong case",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    true,
+		},
+		{
+			name:    "invalid checksum - modified address (EIP-55 format)",
+			address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96046",
+			want:    false,
+		},
+		{
+			name:    "all uppercase - no checksum needed",
+			address: "0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045",
+			want:    true,
+		},
+		{
+			name:    "all lowercase - no checksum needed",
+			address: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := VerifyChecksum(tt.address); got != tt.want {
+				t.Errorf("VerifyChecksum(%q) = %v, want %v", tt.address, got, tt.want)
+			}
+		})
+	}
+}
