@@ -108,50 +108,59 @@ type BlockHeader struct {
 }
 
 func (c *RPCClient) ChainId(ctx context.Context) (uint64, error) {
+	log.Debug("Calling geth ChainId")
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_chainId", []interface{}{})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.ChainId] Failed to get chain ID", "error", err)
 		return 0, err
 	}
 
 	var chainIDHex string
 	if err := json.Unmarshal(result, &chainIDHex); err != nil {
-		log.Error("[RPCClient.ChainId] Failed to unmarshal chain ID", "result", string(result), "error", err)
 		return 0, fmt.Errorf("failed to unmarshal chain ID: %w", err)
 	}
 
 	chainID, err := parseHexToUint64(chainIDHex)
 	if err != nil {
-		log.Error("[RPCClient.ChainId] Failed to parse chain ID", "chain_id_hex", chainIDHex, "error", err)
-		return 0, err
+		return 0, fmt.Errorf("failed to parse chain ID(hex=%s): %w", chainIDHex, err)
 	}
-
+	log.Debug("Call geth ChainId success!", "chain_id", chainID, "time_cost_ms", cost.Microseconds())
 	return chainID, nil
 }
 
 func (c *RPCClient) BlockNumber(ctx context.Context) (string, error) {
+	log.Debug("Calling geth BlockNumber")
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_blockNumber", []interface{}{})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.BlockNumber] Failed to get block number", "error", err)
 		return "", err
 	}
 
 	var blockNumber string
 	if err := json.Unmarshal(result, &blockNumber); err != nil {
-		log.Error("[RPCClient.BlockNumber] Failed to unmarshal block number", "result", string(result), "error", err)
 		return "", fmt.Errorf("failed to unmarshal block number: %w", err)
 	}
-
+	log.Debug("Call geth BlockNumber success!", "block_number", blockNumber, "time_cost_ms", cost.Microseconds())
 	return blockNumber, nil
 }
 
 // GetBlockByNumber 获取指定区块的区块头信息（用于 EIP-1559 baseFee 计算）
 // tag 支持 "latest"、"earliest"、"pending" 或具体区块号
 func (c *RPCClient) GetBlockByNumber(ctx context.Context, tag string) (*BlockHeader, error) {
+	log.Debug("Calling geth GetBlockByNumber", "tag", tag)
+
+	signStart := time.Now()
 	params := []interface{}{tag, false} // false = 返回完整区块对象（非完整交易）
 	result, err := c.call(ctx, "eth_getBlockByNumber", params)
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.GetBlockByNumber] Failed to get block", "tag", tag, "error", err)
 		return nil, err
 	}
 
@@ -163,20 +172,17 @@ func (c *RPCClient) GetBlockByNumber(ctx context.Context, tag string) (*BlockHea
 
 	var block blockResponse
 	if err := json.Unmarshal(result, &block); err != nil {
-		log.Error("[RPCClient.GetBlockByNumber] Failed to unmarshal block", "result", string(result), "error", err)
 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
 	}
 
 	gasLimit, err := parseHexToUint64(block.GasLimit)
 	if err != nil {
-		log.Error("[RPCClient.GetBlockByNumber] Failed to parse gasLimit", "gasLimit", block.GasLimit, "error", err)
-		return nil, fmt.Errorf("failed to parse gasLimit: %w", err)
+		return nil, fmt.Errorf("failed to parse gasLimit(hex=%s): %w", block.GasLimit, err)
 	}
 
 	gasUsed, err := parseHexToUint64(block.GasUsed)
 	if err != nil {
-		log.Error("[RPCClient.GetBlockByNumber] Failed to parse gasUsed", "gasUsed", block.GasUsed, "error", err)
-		return nil, fmt.Errorf("failed to parse gasUsed: %w", err)
+		return nil, fmt.Errorf("failed to parse gasUsed(hex=%s): %w", block.GasUsed, err)
 	}
 
 	baseFeePerGas := new(big.Int)
@@ -184,29 +190,32 @@ func (c *RPCClient) GetBlockByNumber(ctx context.Context, tag string) (*BlockHea
 		baseFeePerGasHex := strings.TrimPrefix(block.BaseFeePerGas, "0x")
 		baseFeePerGas.SetString(baseFeePerGasHex, 16)
 	}
-
+	log.Debug("Call geth GetBlockByNumber success!", "tag", tag, "time_cost_ms", cost.Microseconds())
 	return &BlockHeader{GasLimit: gasLimit, GasUsed: gasUsed, BaseFeePerGas: baseFeePerGas}, nil
 }
 
 // MaxPriorityFeePerGas 获取当前网络建议的小费（maxPriorityFeePerGas）
 // 等同于 eth_maxPriorityFeePerGas RPC 方法
 func (c *RPCClient) MaxPriorityFeePerGas(ctx context.Context) (*big.Int, error) {
+	log.Debug("Calling geth MaxPriorityFeePerGas")
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_maxPriorityFeePerGas", []interface{}{})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.MaxPriorityFeePerGas] Failed to get max priority fee", "error", err)
 		return nil, err
 	}
 
 	var feeHex string
 	if err := json.Unmarshal(result, &feeHex); err != nil {
-		log.Error("[RPCClient.MaxPriorityFeePerGas] Failed to unmarshal fee", "result", string(result), "error", err)
 		return nil, fmt.Errorf("failed to unmarshal maxPriorityFeePerGas: %w", err)
 	}
 
 	fee := new(big.Int)
 	feeHex = strings.TrimPrefix(feeHex, "0x")
 	fee.SetString(feeHex, 16)
-
+	log.Debug("Call geth MaxPriorityFeePerGas success!", "fee", fee.String(), "time_cost_ms", cost.Microseconds())
 	return fee, nil
 }
 
@@ -214,13 +223,7 @@ func (c *RPCClient) MaxPriorityFeePerGas(ctx context.Context) (*big.Int, error) 
 // 即用户愿意支付给矿工/验证者的最大小费
 // 等同于调用 eth_maxPriorityFeePerGas
 func (c *RPCClient) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
-	tipCap, err := c.MaxPriorityFeePerGas(ctx)
-	if err != nil {
-		log.Error("[RPCClient.SuggestGasTipCap] Failed to get tip cap", "error", err)
-		return nil, errors.Wrap(err, "failed to get gas tip cap")
-	}
-
-	return tipCap, nil
+	return c.MaxPriorityFeePerGas(ctx)
 }
 
 // SuggestGasFeeCap 获取 GasFeeCap (maxFeePerGas)
@@ -230,13 +233,11 @@ func (c *RPCClient) SuggestGasFeeCap(ctx context.Context) (*big.Int, error) {
 	// Step 1: 获取最新区块，计算下一区块的 baseFee
 	block, err := c.GetBlockByNumber(ctx, "latest")
 	if err != nil {
-		log.Error("[RPCClient.SuggestGasFeeCap] Failed to get block", "error", err)
 		return nil, errors.Wrap(err, "failed to get latest block for baseFee")
 	}
 
 	// 检查是否为 EIP-1559 链（baseFeePerGas 必须大于 0）
 	if block.BaseFeePerGas.Cmp(big.NewInt(0)) == 0 {
-		log.Error("[RPCClient.SuggestGasFeeCap] Chain does not support EIP-1559")
 		return nil, errors.New("chain does not support EIP-1559")
 	}
 
@@ -271,7 +272,7 @@ func (c *RPCClient) SuggestGasFeeCap(ctx context.Context) (*big.Int, error) {
 	// Step 3: 获取 maxPriorityFeePerGas（小费）
 	maxPriorityFee, err := c.MaxPriorityFeePerGas(ctx)
 	if err != nil {
-		log.Warn("[RPCClient.SuggestGasFeeCap] Failed to get maxPriorityFeePerGas, using fallback 2 gwei", "error", err)
+		log.Warn("Failed to get maxPriorityFeePerGas, using fallback 2 gwei", "error", err)
 		maxPriorityFee = big.NewInt(2000000000) // 2 gwei
 	}
 
@@ -283,80 +284,135 @@ func (c *RPCClient) SuggestGasFeeCap(ctx context.Context) (*big.Int, error) {
 }
 
 func (c *RPCClient) GetBalance(ctx context.Context, address string) (*big.Int, error) {
+	log.Debug("Calling geth GetBalance", "address", address)
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_getBalance", []interface{}{address, "latest"})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.GetBalance] Failed to get balance", "address", address, "error", err)
 		return nil, err
 	}
 
 	var balanceHex string
 	if err := json.Unmarshal(result, &balanceHex); err != nil {
-		log.Error("[RPCClient.GetBalance] Failed to unmarshal balance", "address", address, "result", string(result), "error", err)
 		return nil, fmt.Errorf("failed to unmarshal balance: %w", err)
 	}
 
 	balance := new(big.Int)
 	balanceHex = strings.TrimPrefix(balanceHex, "0x")
 	balance.SetString(balanceHex, 16)
+	log.Debug("Call geth GetBalance success!", "address", address, "balance", balance.String(), "time_cost_ms", cost.Microseconds())
+	return balance, nil
+}
 
+func (c *RPCClient) GetTokenBalance(ctx context.Context, owner, contract string) (*big.Int, error) {
+	log.Debug("Calling geth getTokenBalance", "owner", owner, "contract", contract)
+
+	methodID := "0x70a08231"
+	paddedOwner, err := PadAddressTo32Bytes(owner)
+	if err != nil {
+		return nil, fmt.Errorf("invalid owner address: %w", err)
+	}
+	data := methodID + paddedOwner
+
+	signStart := time.Now()
+	res, err := c.call(ctx, "eth_call", []interface{}{CallArg{To: contract, Data: data}, "latest"})
+	cost := time.Since(signStart)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var balanceHexWith0x string
+	if err := json.Unmarshal(res, &balanceHexWith0x); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
+	}
+
+	balanceHex := strings.TrimPrefix(balanceHexWith0x, "0x")
+	if !isHexString(balanceHex) {
+		return nil, fmt.Errorf("invalid balanceOf response: non-hex payload (owner=%s, contract=%s)", owner, contract)
+	}
+	if len(balanceHex) == 0 {
+		// 合约代码ERC20标准 balanceOf 或 eth_call 返回空 data，不能当作余额 0
+		return nil, fmt.Errorf("empty balanceOf response: contract may not implement balanceOf (owner=%s, contract=%s)", owner, contract)
+	}
+	// ERC20 balanceOf 按 ABI 返回 uint256，固定 32 字节（64 个 hex 字符）。
+	if len(balanceHex) != 64 {
+		return nil, fmt.Errorf("invalid balanceOf response: got %d hex chars, want 64 (owner=%s, contract=%s)", len(balanceHex), owner, contract)
+	}
+
+	balance, ok := new(big.Int).SetString(balanceHex, 16)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse balance hex (owner=%s, contract=%s)", owner, contract)
+	}
+	log.Debug("Call geth GetTokenBalance success!", "owner", owner, "contract", contract, "balance", balance.String(), "time_cost_ms", cost.Microseconds())
 	return balance, nil
 }
 
 func (c *RPCClient) GetTransactionCount(ctx context.Context, address string) (uint64, error) {
+	log.Debug("Calling geth GetTransactionCount", "address", address)
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_getTransactionCount", []interface{}{address, "pending"})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.GetTransactionCount] Failed to get transaction count", "address", address, "error", err)
 		return 0, err
 	}
 
 	var nonceHex string
 	if err := json.Unmarshal(result, &nonceHex); err != nil {
-		log.Error("[RPCClient.GetTransactionCount] Failed to unmarshal nonce", "address", address, "result", string(result), "error", err)
 		return 0, fmt.Errorf("failed to unmarshal nonce: %w", err)
 	}
 
 	nonce, err := parseHexToUint64(nonceHex)
 	if err != nil {
-		log.Error("[RPCClient.GetTransactionCount] Failed to parse nonce", "address", address, "nonce_hex", nonceHex, "error", err)
-		return 0, err
+		return 0, fmt.Errorf("failed to parse nonce(hex=%s): %w", nonceHex, err)
 	}
-
+	log.Debug("Call geth GetTransactionCount success!", "address", address, "time_cost_ms", cost.Microseconds())
 	return nonce, nil
 }
 
 func (c *RPCClient) GasPrice(ctx context.Context) (*big.Int, error) {
+	log.Debug("Calling geth GasPrice")
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_gasPrice", []interface{}{})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.GasPrice] Failed to get gas price", "error", err)
 		return nil, err
 	}
 
 	var gasPriceHex string
 	if err := json.Unmarshal(result, &gasPriceHex); err != nil {
-		log.Error("[RPCClient.GasPrice] Failed to unmarshal gas price", "result", string(result), "error", err)
 		return nil, fmt.Errorf("failed to unmarshal gas price: %w", err)
 	}
 
 	gasPrice := new(big.Int)
 	gasPriceHex = strings.TrimPrefix(gasPriceHex, "0x")
 	gasPrice.SetString(gasPriceHex, 16)
-
+	log.Debug("Call geth GasPrice success!", "gas_price", gasPrice.String(), "time_cost_ms", cost.Microseconds())
 	return gasPrice, nil
 }
 
 func (c *RPCClient) GetCode(ctx context.Context, address string) (string, error) {
+	log.Debug("Calling geth GetCode", "address", address)
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_getCode", []interface{}{address, "latest"})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.GetCode] Failed to get code", "address", address, "error", err)
 		return "", err
 	}
 
 	var code string
 	if err := json.Unmarshal(result, &code); err != nil {
-		log.Error("[RPCClient.GetCode] Failed to unmarshal code", "address", address, "result", string(result), "error", err)
 		return "", fmt.Errorf("failed to unmarshal code: %w", err)
 	}
-
+	log.Debug("Call geth GetCode success!", "address", address, "code_length", len(code), "time_cost_ms", cost.Microseconds())
 	return code, nil
 }
 
@@ -368,61 +424,69 @@ type CallArg struct {
 }
 
 func (c *RPCClient) EstimateGas(ctx context.Context, callObj CallArg) (uint64, error) {
+	log.Debug("Calling geth EstimateGas", "call_obj", callObj)
+
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_estimateGas", []interface{}{callObj})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.EstimateGas] Failed to estimate gas", "call_obj", callObj, "error", err)
 		return 0, err
 	}
 
 	var gasHex string
 	if err := json.Unmarshal(result, &gasHex); err != nil {
-		log.Error("[RPCClient.EstimateGas] Failed to unmarshal gas", "result", string(result), "error", err)
 		return 0, fmt.Errorf("failed to unmarshal gas: %w", err)
 	}
 
 	gas, err := parseHexToUint64(gasHex)
 	if err != nil {
-		log.Error("[RPCClient.EstimateGas] Failed to parse gas", "gas_hex", gasHex, "error", err)
-		return 0, err
+		return 0, fmt.Errorf("failed to parse gas(hex=%s): %w", gasHex, err)
 	}
-
+	log.Debug("Call geth EstimateGas success!", "gas", gas, "time_cost_ms", cost.Microseconds())
 	return gas, nil
 }
 
-func (c *RPCClient) Call(ctx context.Context, callObj CallArg) (string, error) {
-	result, err := c.call(ctx, "eth_call", []interface{}{callObj, "latest"})
-	if err != nil {
-		log.Error("[RPCClient.Call] Failed to call contract", "call_obj", callObj, "error", err)
-		return "", err
-	}
+// func (c *RPCClient) Call(ctx context.Context, callObj CallArg) (string, error) {
+// 	log.Debug("Calling geth Call", "call_obj", callObj)
 
-	var resultStr string
-	if err := json.Unmarshal(result, &resultStr); err != nil {
-		log.Error("[RPCClient.Call] Failed to unmarshal result", "result", string(result), "error", err)
-		return "", fmt.Errorf("failed to unmarshal result: %w", err)
-	}
+// 	signStart := time.Now()
+// 	result, err := c.call(ctx, "eth_call", []interface{}{callObj, "latest"})
+// 	cost := time.Since(signStart)
 
-	return resultStr, nil
-}
+// 	if err != nil {
+// 		return "", err
+// 	}
+
+// 	var resultStr string
+// 	if err := json.Unmarshal(result, &resultStr); err != nil {
+// 		return "", fmt.Errorf("failed to unmarshal result: %w", err)
+// 	}
+// 	log.Debug("Call geth Call success!", "call_obj", callObj, "time_cost_ms", cost.Microseconds())
+// 	return resultStr, nil
+// }
 
 func (c *RPCClient) BroadcastRawTransaction(ctx context.Context, rawHex string) (string, error) {
+	log.Debug("Calling geth BroadcastRawTransaction")
+
 	// 广播的数据需要以 0x 开头，如果rawHex非 0x 开头，补上
 	if !strings.HasPrefix(rawHex, "0x") {
 		rawHex = "0x" + rawHex
 	}
 
+	signStart := time.Now()
 	result, err := c.call(ctx, "eth_sendRawTransaction", []interface{}{rawHex})
+	cost := time.Since(signStart)
+
 	if err != nil {
-		log.Error("[RPCClient.BroadcastRawTransaction] Broadcast failed", "error", err)
 		return "", err
 	}
 
 	var txHash string
 	if err := json.Unmarshal(result, &txHash); err != nil {
-		log.Error("[RPCClient.BroadcastRawTransaction] Failed to unmarshal tx hash", "result", string(result), "error", err)
 		return "", fmt.Errorf("failed to unmarshal tx hash: %w", err)
 	}
-
+	log.Debug("Call geth BroadcastRawTransaction success!", "tx_hash", txHash, "time_cost_ms", cost.Microseconds())
 	return txHash, nil
 }
 

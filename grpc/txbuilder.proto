@@ -112,6 +112,5 @@ message TxBroadcastRequest {
 }
 
 message TxBroadcastResponse {
-  bool success = 1;
-  string tx_hash = 2; // 交易哈希，广播成功后返回
+  string tx_hash = 1; // 交易哈希，广播成功后返回
 }

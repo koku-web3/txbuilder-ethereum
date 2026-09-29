@@ -11,9 +11,8 @@ import (
 	log "github.com/koku-web3/logko"
 	txbuilder "github.com/koku-web3/txbuilder-ethereum/grpc"
 	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
-	"github.com/pkg/errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/koku-web3/txbuilder-ethereum/internal/pkg/errors"
+	"github.com/koku-web3/txbuilder-ethereum/internal/pkg/params"
 )
 
 // BuildSignRawData 构建交易签名原始数据
@@ -28,34 +27,30 @@ import (
 //   - msg: Keccak-256 哈希（Hex 编码），用于外部签名
 //   - raw_data: RLP 编码的交易数据（Hex 字符串），签名后用于广播
 func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.BuildSignRawDataRequest) (*txbuilder.BuildSignRawDataResponse, error) {
+	log.Debug("BuildSignRawData received", "params", req)
+
 	if err := s.validateBuildSignRawData(req); err != nil {
-		return nil, err
+		log.Warn("Input validation failed", "trace_id", req.TraceId, "error", err.Error())
+		return nil, errors.InvalidArgument(err.Error())
 	}
 
-	log.Info("[BuildSignRawData] Validation passed, building transaction", "trace_id", req.TraceId)
+	var (
+		err          error
+		msg, rawData string
+	)
 
-	var msg, rawData string
-	var err error
-
-	txType := "basic_coin"
-	if req.Contract != "" {
-		txType = "token"
-	}
-	log.Info("[BuildSignRawData] Building transaction", "trace_id", req.TraceId, "tx_type", txType, "from_address", req.FromAddress, "to_address", req.ToAddress, "amount", req.Amount)
-
-	if req.Contract == "" {
-		msg, rawData, err = s.buildBasicCoinTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount)
-	} else {
+	if params.IsContractOpt(req.Contract) {
 		msg, rawData, err = s.buildTokenTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount, req.Contract)
+	} else {
+		msg, rawData, err = s.buildBasicCoinTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount)
 	}
 
 	if err != nil {
-		log.Error("[BuildSignRawData] Failed to build transaction", "trace_id", req.TraceId, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to build transaction: %v", err)
+		log.Error("Failed to build transaction", "trace_id", req.TraceId, "error", err)
+		return nil, errors.Internalf("failed to build transaction: %v", err)
 	}
 
-	log.Info("[BuildSignRawData] Transaction built", "trace_id", req.TraceId, "msg_length", len(msg), "raw_data_length", len(rawData))
-
+	log.Info("Build raw data of signing success", "trace_id", req.TraceId, "msg", msg, "raw_data", rawData)
 	return &txbuilder.BuildSignRawDataResponse{Msg: msg, RawData: rawData}, nil
 }
 
@@ -65,28 +60,26 @@ func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.
 //   - msg: EIP-1559 签名哈希（Keccak-256(RLP(nonce, gasPrice, gasLimit, to, value, chainId, 0, 0))）
 //   - rawData: RLP 编码的交易数据（用于签名后组装完整签名交易）
 func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, to, amount string) (string, string, error) {
-	log.Debug("[buildBasicCoinTransaction] Building ETH transfer", "from", from, "to", to, "amount", amount)
+	log.Debug("Building ETH transfer", "from", from, "to", to, "amount", amount)
 
-	amountInt, err := parseAmount(amount)
+	amountInt, err := ethereum.ParseAmount(amount)
 	if err != nil {
-		return "", "", errors.Wrap(err, "invalid amount")
+		return "", "", err
 	}
 
 	nonce, err := s.rpc.GetTransactionCount(ctx, from)
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get nonce")
+		return "", "", errors.Wrap(err, "geth GetTransactionCount failed")
 	}
 
 	gasTipCap, err := s.rpc.SuggestGasTipCap(ctx)
 	if err != nil {
-		log.Warn("[buildBasicCoinTransaction] Failed to get gas tip cap, using fallback", "error", err)
-		return "", "", errors.Wrap(err, "failed to get tip cap")
+		return "", "", errors.Wrap(err, "failed to get suggest tip cap")
 	}
 
 	gasFeeCap, err := s.rpc.SuggestGasFeeCap(ctx)
 	if err != nil {
-		log.Warn("[buildBasicCoinTransaction] Failed to get gas fee cap, using fallback", "error", err)
-		return "", "", errors.Wrap(err, "failed to get gas fee cap")
+		return "", "", errors.Wrap(err, "failed to get suggest gas fee cap")
 	}
 
 	toAddress := common.HexToAddress(to)
@@ -123,11 +116,10 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 
 	rawData, err := tx.MarshalBinary()
 	if err != nil {
-		return "", "", fmt.Errorf("[buildBasicCoinTransaction] tx marshalBinary failed %w", err)
+		return "", "", fmt.Errorf("Builded tx marshalBinary failed %w", err)
 	}
 
-	log.Debug("[buildBasicCoinTransaction] Transaction built", "from", from, "nonce", nonce, "msg_length", len(msg))
-
+	log.Debug("Transaction built", "from", from, "nonce", nonce, "msg_length", len(msg))
 	return msg, hex.EncodeToString(rawData), nil
 }
 
@@ -137,33 +129,34 @@ func (s *TxBuilderService) buildBasicCoinTransaction(ctx context.Context, from, 
 //   - msg: EIP-1559 签名哈希
 //   - rawData: RLP 编码的交易数据
 func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, amount, contract string) (string, string, error) {
-	log.Debug("[buildTokenTransaction] Building ERC20 transfer", "from", from, "to", to, "amount", amount, "contract", contract)
+	log.Debug("Building ERC20 transfer", "from", from, "to", to, "amount", amount, "contract", contract)
 
 	// amount 参数已经是链上单位（根据 proto 注释），直接解析即可
-	amountInt, err := parseAmount(amount)
+	amountInt, err := ethereum.ParseAmount(amount)
 	if err != nil {
-		return "", "", errors.Wrap(err, "invalid amount")
+		return "", "", err
 	}
 
 	nonce, err := s.rpc.GetTransactionCount(ctx, from)
 	if err != nil {
-		return "", "", errors.Wrap(err, "failed to get nonce")
+		return "", "", errors.Wrap(err, "geth GetTransactionCount failed")
 	}
 
 	gasTipCap, err := s.rpc.SuggestGasTipCap(ctx)
 	if err != nil {
-		log.Warn("[buildTokenTransaction] Failed to get gas tip cap, using fallback", "error", err)
-		return "", "", errors.Wrap(err, "failed to get tip cap")
+		return "", "", errors.Wrap(err, "failed to get suggest tip cap")
 	}
 
 	gasFeeCap, err := s.rpc.SuggestGasFeeCap(ctx)
 	if err != nil {
-		log.Warn("[buildTokenTransaction] Failed to get gas fee cap, using fallback", "error", err)
-		return "", "", errors.Wrap(err, "failed to get gas fee cap")
+		return "", "", errors.Wrap(err, "failed to get suggest gas fee cap")
 	}
 
 	// 构建 ERC20 transfer calldata（methodID + 收款地址 + 金额）
-	data := buildERC20TransferData(to, amountInt)
+	data, err := ethereum.BuildERC20TransferData(to, amountInt)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build ERC20 transfer data: %w", err)
+	}
 	// Data 必须是 0x 前缀的十六进制字符串，这是以太坊 RPC 要求的格式
 	dataHex := "0x" + hex.EncodeToString(data)
 
@@ -174,8 +167,8 @@ func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, 
 		Data: dataHex,
 	})
 	if err != nil {
-		log.Warn("[buildTokenTransaction] Gas estimation failed, using default 100,000", "error", err)
-		gas = 100000 // 估算失败时使用默认值 100,000 gas
+		log.Warn("Gas estimation failed, using default 100,000", "from", from, "contract", contract, "error", err)
+		gas = DefaultGas // 估算失败时使用默认值 100,000 gas
 	} else {
 		gas = uint64(float64(gas) * 1.2) // 乘以 1.2 系数避免 gas 不足
 	}
@@ -204,10 +197,43 @@ func (s *TxBuilderService) buildTokenTransaction(ctx context.Context, from, to, 
 
 	rawData, err := tx.MarshalBinary()
 	if err != nil {
-		return "", "", fmt.Errorf("[buildTokenTransaction] tx marshalBinary failed %w", err)
+		return "", "", fmt.Errorf("Builded tx marshalBinary failed %w", err)
 	}
 
-	log.Debug("[buildTokenTransaction] Transaction built", "from", from, "nonce", nonce, "msg_length", len(msg))
-
+	log.Debug("Transaction built", "from", from, "nonce", nonce, "msg_length", len(msg))
 	return msg, hex.EncodeToString(rawData), nil
+}
+
+func (s *TxBuilderService) validateBuildSignRawData(req *txbuilder.BuildSignRawDataRequest) error {
+	if req.TraceId == "" || len(req.TraceId) > 36 {
+		return errors.New("trace_id is required and must be 1-36 characters")
+	}
+	if req.ChainCode == "" || len(req.ChainCode) > 36 {
+		return errors.New("chain_code is required and must be 1-36 characters")
+	}
+	if req.Coin == "" || len(req.Coin) > 36 {
+		return errors.New("coin_id is required and must be 1-36 characters")
+	}
+	if req.CoinSymbol == "" || len(req.CoinSymbol) > 36 {
+		return errors.New("coin_symbol is required and must be 1-36 characters")
+	}
+	if req.FromAddress == "" || len(req.FromAddress) > 256 {
+		return errors.New("from_address is required and must be 1-256 characters")
+	}
+	if req.ToAddress == "" || len(req.ToAddress) > 256 {
+		return errors.New("to_address is required and must be 1-256 characters")
+	}
+	if req.Amount == "" || len(req.Amount) > 64 {
+		return errors.New("amount is required and must be 1-64 characters")
+	}
+	if !ethereum.IsPureNumber(req.Amount) {
+		return errors.New("amount must be a pure number")
+	}
+	if !ethereum.ValidateAddress(req.FromAddress) {
+		return errors.New("invalid from_address")
+	}
+	if !ethereum.ValidateAddress(req.ToAddress) {
+		return errors.New("invalid to_address")
+	}
+	return nil
 }

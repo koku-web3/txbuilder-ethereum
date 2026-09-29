@@ -701,7 +701,7 @@ func (x *BuildSignRawDataRequest) GetContract() string {
 
 type BuildSignRawDataResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Msg           string                 `protobuf:"bytes,1,opt,name=msg,proto3" json:"msg,omitempty"`                        // SHA256(raw_data) - 待签名内容
+	Msg           string                 `protobuf:"bytes,1,opt,name=msg,proto3" json:"msg,omitempty"`                        // Keccak-256(raw_data) - 待签名内容（EIP-1559 签名哈希）
 	RawData       string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // 原始交易数据 (hex 编码) - Coordinator 用于构造完整交易
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -816,8 +816,7 @@ func (x *TxBroadcastRequest) GetSignature() string {
 
 type TxBroadcastResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	TxHash        string                 `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"` // 交易哈希，广播成功后返回
+	TxHash        string                 `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"` // 交易哈希，广播成功后返回
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -850,13 +849,6 @@ func (x *TxBroadcastResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TxBroadcastResponse.ProtoReflect.Descriptor instead.
 func (*TxBroadcastResponse) Descriptor() ([]byte, []int) {
 	return file_grpc_txbuilder_proto_rawDescGZIP(), []int{14}
-}
-
-func (x *TxBroadcastResponse) GetSuccess() bool {
-	if x != nil {
-		return x.Success
-	}
-	return false
 }
 
 func (x *TxBroadcastResponse) GetTxHash() string {
@@ -923,10 +915,9 @@ const file_grpc_txbuilder_proto_rawDesc = "" +
 	"\x12TxBroadcastRequest\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x19\n" +
 	"\braw_data\x18\x02 \x01(\tR\arawData\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\"H\n" +
-	"\x13TxBroadcastResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x17\n" +
-	"\atx_hash\x18\x02 \x01(\tR\x06txHash2\xbc\x04\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\".\n" +
+	"\x13TxBroadcastResponse\x12\x17\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash2\xbc\x04\n" +
 	"\tTxBuilder\x12U\n" +
 	"\x0eConvertAddress\x12 .txbuilder.ConvertAddressRequest\x1a!.txbuilder.ConvertAddressResponse\x12R\n" +
 	"\rVerifyAddress\x12\x1f.txbuilder.VerifyAddressRequest\x1a .txbuilder.VerifyAddressResponse\x12j\n" +
