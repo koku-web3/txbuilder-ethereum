@@ -44,34 +44,31 @@ func (c *RPCClient) call(ctx context.Context, method string, params []interface{
 
 	body, err := json.Marshal(requestBody)
 	if err != nil {
-		log.Error("[RPCClient.call] Failed to marshal request", "method", method, "error", err)
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal node RPC request payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.RpcURL, bytes.NewReader(body))
 	if err != nil {
-		log.Error("[RPCClient.call] Failed to create request", "url", c.RpcURL, "error", err)
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create node HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		log.Error("[RPCClient.call] Failed to do request", "url", c.RpcURL, "method", method, "error", err)
 		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		log.Error("[RPCClient.call] RPC call failed", "url", c.RpcURL, "method", method, "status_code", resp.StatusCode, "response_body", string(respBody))
-		return nil, fmt.Errorf("rpc call failed with status: %d, body: %s", resp.StatusCode, string(respBody))
+		log.Error("Call node RPC failed", "url", c.RpcURL, "method", method, "status_code", resp.StatusCode, "response_body", string(respBody))
+		return nil, fmt.Errorf("call node rpc failed with status: %d", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Error("[RPCClient.call] Failed to read response body", "url", c.RpcURL, "method", method, "error", err)
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		log.Error("Failed to read node RPC response body", "url", c.RpcURL, "method", method, "error", err)
+		return nil, fmt.Errorf("failed to read node RPC response body: %w", err)
 	}
 
 	type jsonRPCError struct {
@@ -88,13 +85,13 @@ func (c *RPCClient) call(ctx context.Context, method string, params []interface{
 
 	var rpcResp jsonRPCResponse
 	if err := json.Unmarshal(respBody, &rpcResp); err != nil {
-		log.Error("[RPCClient.call] Failed to unmarshal JSON-RPC response", "url", c.RpcURL, "method", method, "error", err)
-		return nil, fmt.Errorf("failed to unmarshal JSON-RPC response: %w", err)
+		log.Error("Failed to unmarshal node JSON-RPC response", "url", c.RpcURL, "method", method, "error", err)
+		return nil, fmt.Errorf("failed to unmarshal node JSON-RPC response: %w", err)
 	}
 
 	if rpcResp.Error != nil {
-		log.Error("[RPCClient.call] JSON-RPC error", "url", c.RpcURL, "method", method, "error_code", rpcResp.Error.Code, "error_message", rpcResp.Error.Message)
-		return nil, fmt.Errorf("eth rpc error: code=%d msg=%s", rpcResp.Error.Code, rpcResp.Error.Message)
+		log.Error("Node Response error", "url", c.RpcURL, "method", method, "error_code", rpcResp.Error.Code, "error_message", rpcResp.Error.Message)
+		return nil, fmt.Errorf("node response error: code=%d msg=%s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
 	return rpcResp.Result, nil
@@ -446,25 +443,6 @@ func (c *RPCClient) EstimateGas(ctx context.Context, callObj CallArg) (uint64, e
 	log.Debug("Call geth EstimateGas success!", "gas", gas, "time_cost_ms", cost.Microseconds())
 	return gas, nil
 }
-
-// func (c *RPCClient) Call(ctx context.Context, callObj CallArg) (string, error) {
-// 	log.Debug("Calling geth Call", "call_obj", callObj)
-
-// 	signStart := time.Now()
-// 	result, err := c.call(ctx, "eth_call", []interface{}{callObj, "latest"})
-// 	cost := time.Since(signStart)
-
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	var resultStr string
-// 	if err := json.Unmarshal(result, &resultStr); err != nil {
-// 		return "", fmt.Errorf("failed to unmarshal result: %w", err)
-// 	}
-// 	log.Debug("Call geth Call success!", "call_obj", callObj, "time_cost_ms", cost.Microseconds())
-// 	return resultStr, nil
-// }
 
 func (c *RPCClient) BroadcastRawTransaction(ctx context.Context, rawHex string) (string, error) {
 	log.Debug("Calling geth BroadcastRawTransaction")

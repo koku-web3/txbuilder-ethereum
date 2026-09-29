@@ -11,8 +11,6 @@ import (
 	"github.com/koku-web3/txbuilder-ethereum/internal/ethereum"
 	"github.com/koku-web3/txbuilder-ethereum/internal/pkg/errors"
 	"github.com/koku-web3/txbuilder-ethereum/internal/pkg/params"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // CheckSufficientBalance 检查地址余额是否足够
@@ -23,33 +21,38 @@ import (
 //
 //	因此 balanceOf 返回的链上单位可直接与 amount 比较，无需 decimals 转换
 func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbuilder.CheckSufficientBalanceRequest) (*txbuilder.CheckSufficientBalanceResponse, error) {
-	log.Debug("CheckSufficientBalance received", "params", req)
+	log.Debug("CheckSufficientBalance received", "trace_id", req.TraceId,
+		"chain_code", req.ChainCode, "coin", req.Coin,
+		"from_address", req.FromAddress, "amount", req.Amount, "contract", req.Contract)
 
 	if err := s.validateCheckSufficientBalance(req); err != nil {
-		log.Warn("Input validation failed", "error", err)
-		return nil, errors.InvalidArgument(err.Error())
+		log.Warn("Invalid input parameter", "trace_id", req.TraceId, "error", err)
+		return nil, errors.InvalidArgumentErr(err)
 	}
 
 	isContract := params.IsContractOpt(req.Contract)
-
 	amountInt, err := ethereum.ParseAmount(req.Amount)
+
 	if err != nil {
 		log.Warn("Invalid amount format", "trace_id", req.TraceId, "amount", req.Amount, "error", err)
-		return nil, errors.InvalidArgumentf("invalid amount: %v", err)
+		return nil, errors.InvalidArgument("amount")
 	}
 
 	balance, err := s.getBasicCoinBalance(ctx, req.FromAddress)
 	if err != nil {
 		log.Error("Failed to get balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "error", err)
-		return nil, errors.Internalf("failed to get balance: %v", err)
+		return nil, errors.Internal()
 	}
 
 	var calldata string
 	if isContract {
-		data, err := ethereum.BuildERC20TransferData(req.FromAddress, amountInt)
+		// 用于模拟执行 ERC20 交易，计算它的手续费
+		// 任意一个地址即可
+		mockAddr := req.FromAddress
+		data, err := ethereum.BuildERC20TransferData(mockAddr, amountInt)
 		if err != nil {
-			log.Warn("Failed to build ERC20 transfer data", "trace_id", req.TraceId, "from_address", req.FromAddress, "error", err)
-			return nil, errors.InvalidArgumentf("failed to build ERC20 transfer data: %v", err)
+			log.Warn("Failed to build ERC20 transfer data", "trace_id", req.TraceId, "error", err)
+			return nil, errors.InvalidArgument("contract")
 		}
 		calldata = hex.EncodeToString(data)
 	}
@@ -57,7 +60,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	fee, err := s.getEip1559TxFee(ctx, isContract, req.FromAddress, req.Contract, calldata)
 	if err != nil {
 		log.Error("Failed to get EIP-1559 tx fee", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internalf("failed to get EIP-1559 tx fee: %v", err)
+		return nil, errors.Internal()
 	}
 
 	if !isContract {
@@ -68,7 +71,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	}
 
 	if !ethereum.ValidateContractAddress(req.Contract) {
-		return nil, errors.InvalidArgument("invalid contract address format")
+		return nil, errors.InvalidArgument("contract")
 	}
 
 	// Token 转账：只需检查 ETH 余额是否足够支付 Gas
@@ -77,7 +80,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	tokenBalance, err := s.getTokenBalance(ctx, req.FromAddress, req.Contract)
 	if err != nil {
 		log.Error("Failed to get token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract, "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get token balance: %v", err)
+		return nil, errors.Internal()
 	}
 
 	// amount 已是链上最小单位，与 balanceOf 返回值直接比较

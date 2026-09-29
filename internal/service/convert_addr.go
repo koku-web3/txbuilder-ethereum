@@ -16,16 +16,16 @@ func (s *TxBuilderService) ConvertAddress(ctx context.Context, req *txbuilder.Co
 	log.Debug("ConvertAddress received", "trace_id", req.TraceId, "keys_count", len(req.Keys))
 
 	if err := s.validateConvertAddress(req); err != nil {
-		log.Warn("Input validation failed", "trace_id", req.TraceId, "error", err)
-		return nil, errors.InvalidArgument(err.Error())
+		log.Warn("Invalid input parameter", "trace_id", req.TraceId, "error", err)
+		return nil, errors.InvalidArgumentErr(err)
 	}
 
 	results := make([]*txbuilder.PublicKeysResponse, 0, len(req.Keys))
 	for _, key := range req.Keys {
 		addr, err := ethereum.PublicKeyPEMToAddress(key.PkixPubkeyPem)
 		if err != nil {
-			log.Error("Failed to convert public key", "trace_id", req.TraceId, "account_index", key.AccountIndex, "pkix_pubkey_pem", key.PkixPubkeyPem, "error", err)
-			return nil, errors.InvalidArgumentf("failed to convert public key at account_index %d: %v", key.AccountIndex, err)
+			log.Error("Failed to convert public key", "trace_id", req.TraceId, "account_index", key.AccountIndex, "error", err)
+			return nil, errors.InvalidArgument("pkix_pubkey_pem")
 		}
 		results = append(results, &txbuilder.PublicKeysResponse{
 			AccountIndex: key.AccountIndex,

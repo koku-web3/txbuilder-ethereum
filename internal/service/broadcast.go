@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -14,50 +15,50 @@ import (
 // TxBroadcast 广播已签名的交易到以太坊网络
 // 将签名后的交易提交到节点，节点验证后放入交易池并执行
 func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *txbuilder.TxBroadcastRequest) (*txbuilder.TxBroadcastResponse, error) {
-	log.Debug("TxBroadcast received", "params", req)
+	log.Debug("TxBroadcast received", "trace_id", req.TraceId, "signature", req.Signature, "raw_data", req.RawData)
 
-	if err := s.validateTxBroadcast(req); err != nil {
-		log.Warn("Input validation failed", "trace_id", req.TraceId, "error", err.Error())
-		return nil, errors.InvalidArgument(err.Error())
+	if err := validateTxBroadcast(req.TraceId, req.RawData); err != nil {
+		log.Warn("Invalid input parameter", "trace_id", req.TraceId, "params", req.RawData, "error", err)
+		return nil, errors.InvalidArgumentErr(err)
 	}
 
-	signatureBytes, err := hex.DecodeString(req.Signature)
+	signatureBytes, err := decodeSignature(req.Signature)
 	if err != nil {
-		return nil, errors.InvalidArgumentf("hex decode from Signature failed: %v", err)
-	}
-	if len(signatureBytes) != 65 {
-		return nil, errors.InvalidArgument("signature's length must be 65 bytes")
+		log.Warn("Decode input parameter from hex to string failed", "trace_id", req.TraceId, "params", req.Signature, "error", err)
+		return nil, errors.InvalidArgument("signature")
 	}
 
 	txBytes, err := hex.DecodeString(req.RawData)
 	if err != nil {
-		return nil, errors.InvalidArgumentf("hex decode from raw data failed: %v", err)
+		log.Warn("Decode input parameter from hex to string failed", "trace_id", req.TraceId, "params", req.RawData, "error", err)
+		return nil, errors.InvalidArgument("raw_data")
 	}
 
 	tx := &types.Transaction{}
 	if err := tx.UnmarshalBinary(txBytes); err != nil {
-		log.Warn("Invalid request payload, failed to unmarshalBinary rawData", "trace_id", req.TraceId, "error", err.Error())
-		return nil, errors.InvalidArgumentf("raw data unmarshalBinary to transaction failed: %v", err)
+		log.Warn("Invalid request payload, failed to unmarshalBinary", "trace_id", req.TraceId, "params", req.RawData, "error", err)
+		return nil, errors.InvalidArgument("raw_data")
 	}
 
-	signer := types.NewLondonSigner(big.NewInt(int64(s.rpc.ChainID)))
+	chainID := int64(s.rpc.ChainID)
+	signer := types.NewLondonSigner(big.NewInt(chainID))
 
 	signedTx, err := tx.WithSignature(signer, signatureBytes)
 	if err != nil {
-		log.Warn("Invalid request payload, failed to combine signer and signature", "trace_id", req.TraceId, "error", err.Error())
-		return nil, errors.Internalf("tx withSignature failed: %v", err)
+		log.Error("Invalid request payload, failed to combine signer and signature", "trace_id", req.TraceId, "error", err)
+		return nil, errors.Internal()
 	}
 
 	signedTxBytes, err := signedTx.MarshalBinary()
 	if err != nil {
-		log.Error("MarshalBinary signed tx failed", "trace_id", req.TraceId, "error", err.Error())
-		return nil, errors.Internalf("signedTx MarshalBinary failed: %v", err)
+		log.Error("MarshalBinary signed tx failed", "trace_id", req.TraceId, "chain_id", chainID, "signature", req.Signature, "error", err)
+		return nil, errors.Internal()
 	}
 
 	txHash, err := s.rpc.BroadcastRawTransaction(ctx, hex.EncodeToString(signedTxBytes))
 	if err != nil {
 		log.Error("Broadcast transaction failed", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internalf("failed to broadcast transaction: %v", err)
+		return nil, errors.Internal()
 	}
 
 	log.Info("Broadcast tx succeeded", "trace_id", req.TraceId, "tx_hash", txHash)
@@ -65,16 +66,27 @@ func (s *TxBuilderService) TxBroadcast(ctx context.Context, req *txbuilder.TxBro
 	return &txbuilder.TxBroadcastResponse{TxHash: txHash}, nil
 }
 
-func (s *TxBuilderService) validateTxBroadcast(req *txbuilder.TxBroadcastRequest) error {
-	if req.TraceId == "" {
+func validateTxBroadcast(traceID, rawData string) error {
+	if traceID == "" {
 		return errors.New("trace_id is required and must be 1-36 characters")
 	}
-	if req.RawData == "" {
+	if rawData == "" {
 		return errors.New("raw_data is required")
 	}
 
-	if len(req.RawData) > 4096 {
+	if len(rawData) > 4096 {
 		return errors.New("raw_data must be 1-4096 characters")
 	}
 	return nil
+}
+
+func decodeSignature(s string) ([]byte, error) {
+	signatureBytes, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("hex decode from Signature failed: %v", err)
+	}
+	if len(signatureBytes) != 65 {
+		return nil, fmt.Errorf("signature's length must be %d bytes", 65)
+	}
+	return signatureBytes, nil
 }

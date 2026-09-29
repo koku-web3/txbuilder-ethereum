@@ -27,11 +27,14 @@ import (
 //   - msg: Keccak-256 哈希（Hex 编码），用于外部签名
 //   - raw_data: RLP 编码的交易数据（Hex 字符串），签名后用于广播
 func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.BuildSignRawDataRequest) (*txbuilder.BuildSignRawDataResponse, error) {
-	log.Debug("BuildSignRawData received", "params", req)
+	log.Debug("BuildSignRawData received", "trace_id", req.TraceId,
+		"chain_code", req.ChainCode, "coin", req.Coin, "coin_symbol", req.CoinSymbol,
+		"from_address", req.FromAddress, "to_address", req.ToAddress,
+		"amount", req.Amount, "contract", req.Contract)
 
 	if err := s.validateBuildSignRawData(req); err != nil {
-		log.Warn("Input validation failed", "trace_id", req.TraceId, "error", err.Error())
-		return nil, errors.InvalidArgument(err.Error())
+		log.Warn("Invalid input parameter", "trace_id", req.TraceId, "error", err)
+		return nil, errors.InvalidArgumentErr(err)
 	}
 
 	var (
@@ -47,7 +50,7 @@ func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.
 
 	if err != nil {
 		log.Error("Failed to build transaction", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internalf("failed to build transaction: %v", err)
+		return nil, errors.Internal()
 	}
 
 	log.Info("Build raw data of signing success", "trace_id", req.TraceId, "msg", msg, "raw_data", rawData)

@@ -1,6 +1,8 @@
 package errors
 
 import (
+	"fmt"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -12,8 +14,12 @@ import (
 //
 // 使用场景：参数格式错误或值无效时返回，如地址格式不正确、金额为负数、
 // 缺少必需参数等。
-func InvalidArgument(msg string) error {
-	return status.Error(codes.InvalidArgument, msg)
+func InvalidArgument(parameter string) error {
+	return status.Error(codes.InvalidArgument, fmt.Sprintf("invalid %s", parameter))
+}
+
+func InvalidArgumentErr(err error) error {
+	return status.Error(codes.InvalidArgument, err.Error())
 }
 
 func InvalidArgumentf(format string, a ...any) error {
@@ -27,12 +33,8 @@ func InvalidArgumentf(format string, a ...any) error {
 // 使用场景：服务器内部发生未预期的错误时返回，如数据库连接失败、
 // 序列化/反序列化错误、系统不变量被破坏等。此错误应谨慎使用，
 // 通常表示服务端代码有 bug。
-func Internal(msg string) error {
-	return status.Error(codes.Internal, msg)
-}
-
-func Internalf(format string, a ...any) error {
-	return status.Errorf(codes.Internal, format, a...)
+func Internal() error {
+	return status.Error(codes.Internal, "")
 }
 
 // NotFound 表示请求的实体（例如文件或目录）未找到。
