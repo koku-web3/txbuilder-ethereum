@@ -25,13 +25,7 @@ txbuilder-ethereum/
 │   ├── config/              # TOML 配置加载 & 日志初始化
 │   │   ├── config.go
 │   ├── service/             # gRPC handler 实现
-│   │   ├── service.go
-│   │   ├── builder.go
-│   │   └── broadcast.go
 │   └── ethereum/            # Ethereum 相关工具
-│       ├── address.go       # 地址校验（0x + 40 hex）
-│       ├── pubkey.go       # PEM 公钥转 Ethereum 地址
-│       └── rpc.go           # Ethereum 节点 JSON-RPC 客户端
 ├── grpc/
 │   ├── txbuilder.proto      # gRPC 服务和消息定义
 │   ├── txbuilder.pb.go     # 生成的 protobuf 代码
@@ -40,6 +34,41 @@ txbuilder-ethereum/
 │   └── config.toml          # 默认配置文件（Sepolia 测试网）
 └── .golangci.yml           # linter 配置
 ```
+
+## gRPC 返回值
+
+所有 gRPC 接口均使用标准 gRPC 状态码作为返回值。错误响应格式为：
+
+```json
+{
+  "code": 3,
+  "message": "invalid trace_id",
+  "<自定义字段>": ""
+}
+```
+
+### 错误码说明
+
+| 错误码 | 名称 | 说明 |
+| ----- | ---- | ---- |
+| 3 | `InvalidArgument` | 客户端传入的参数无效，如格式错误、缺少必需参数 |
+| 13 | `Internal` | 服务端内部错误，通常表示代码 bug |
+
+### InvalidArgument 返回场景
+
+当客户端传入的参数不符合要求时返回，常见场景：
+
+- `trace_id` 为空或长度超出范围
+- `address` 格式不正确（非 `0x` 开头、非 40 位十六进制）
+- `amount` 格式错误（非数字字符串）
+
+### Internal 返回场景
+
+当服务端处理请求时发生内部错误：
+
+- RPC 调用失败（节点连接问题）
+- 序列化/反序列化错误
+
 
 ## gRPC 接口
 
