@@ -25,26 +25,29 @@ const (
 	TxBuilder_CheckSufficientBalance_FullMethodName = "/txbuilder.TxBuilder/CheckSufficientBalance"
 	TxBuilder_BuildSignRawData_FullMethodName       = "/txbuilder.TxBuilder/BuildSignRawData"
 	TxBuilder_TxBroadcast_FullMethodName            = "/txbuilder.TxBuilder/TxBroadcast"
+	TxBuilder_GetBalance_FullMethodName             = "/txbuilder.TxBuilder/GetBalance"
 )
 
 // TxBuilderClient is the client API for TxBuilder service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// TxBuilder service provides transaction construction APIs
+// TxBuilder 服务提供交易构建相关的 API
 type TxBuilderClient interface {
-	// Convert PEM-encoded public keys to Ethereum addresses
+	// 将 PEM 编码的公钥转换为以太坊地址
 	ConvertAddress(ctx context.Context, in *ConvertAddressRequest, opts ...grpc.CallOption) (*ConvertAddressResponse, error)
-	// Verify if an address is valid
+	// 验证一个地址是否有效
 	VerifyAddress(ctx context.Context, in *VerifyAddressRequest, opts ...grpc.CallOption) (*VerifyAddressResponse, error)
-	// Verify if a contract address is valid
+	// 验证一个合约地址是否有效
 	VerifyContractAddress(ctx context.Context, in *VerifyContractAddressRequest, opts ...grpc.CallOption) (*VerifyContractAddressResponse, error)
-	// Check if the balance is sufficient for a transfer
+	// 检查余额是否足够进行转账
 	CheckSufficientBalance(ctx context.Context, in *CheckSufficientBalanceRequest, opts ...grpc.CallOption) (*CheckSufficientBalanceResponse, error)
-	// Build unsigned transaction raw data for signing
+	// 构建用于签名的未签名交易原始数据
 	BuildSignRawData(ctx context.Context, in *BuildSignRawDataRequest, opts ...grpc.CallOption) (*BuildSignRawDataResponse, error)
-	// Broadcast a signed transaction to the network
+	// 广播已签名交易到网络
 	TxBroadcast(ctx context.Context, in *TxBroadcastRequest, opts ...grpc.CallOption) (*TxBroadcastResponse, error)
+	// 查询余额
+	GetBalance(ctx context.Context, in *GetBalanceRequest, opts ...grpc.CallOption) (*GetBalanceResponse, error)
 }
 
 type txBuilderClient struct {
@@ -115,24 +118,36 @@ func (c *txBuilderClient) TxBroadcast(ctx context.Context, in *TxBroadcastReques
 	return out, nil
 }
 
+func (c *txBuilderClient) GetBalance(ctx context.Context, in *GetBalanceRequest, opts ...grpc.CallOption) (*GetBalanceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBalanceResponse)
+	err := c.cc.Invoke(ctx, TxBuilder_GetBalance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TxBuilderServer is the server API for TxBuilder service.
 // All implementations must embed UnimplementedTxBuilderServer
 // for forward compatibility.
 //
-// TxBuilder service provides transaction construction APIs
+// TxBuilder 服务提供交易构建相关的 API
 type TxBuilderServer interface {
-	// Convert PEM-encoded public keys to Ethereum addresses
+	// 将 PEM 编码的公钥转换为以太坊地址
 	ConvertAddress(context.Context, *ConvertAddressRequest) (*ConvertAddressResponse, error)
-	// Verify if an address is valid
+	// 验证一个地址是否有效
 	VerifyAddress(context.Context, *VerifyAddressRequest) (*VerifyAddressResponse, error)
-	// Verify if a contract address is valid
+	// 验证一个合约地址是否有效
 	VerifyContractAddress(context.Context, *VerifyContractAddressRequest) (*VerifyContractAddressResponse, error)
-	// Check if the balance is sufficient for a transfer
+	// 检查余额是否足够进行转账
 	CheckSufficientBalance(context.Context, *CheckSufficientBalanceRequest) (*CheckSufficientBalanceResponse, error)
-	// Build unsigned transaction raw data for signing
+	// 构建用于签名的未签名交易原始数据
 	BuildSignRawData(context.Context, *BuildSignRawDataRequest) (*BuildSignRawDataResponse, error)
-	// Broadcast a signed transaction to the network
+	// 广播已签名交易到网络
 	TxBroadcast(context.Context, *TxBroadcastRequest) (*TxBroadcastResponse, error)
+	// 查询余额
+	GetBalance(context.Context, *GetBalanceRequest) (*GetBalanceResponse, error)
 	mustEmbedUnimplementedTxBuilderServer()
 }
 
@@ -160,6 +175,9 @@ func (UnimplementedTxBuilderServer) BuildSignRawData(context.Context, *BuildSign
 }
 func (UnimplementedTxBuilderServer) TxBroadcast(context.Context, *TxBroadcastRequest) (*TxBroadcastResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TxBroadcast not implemented")
+}
+func (UnimplementedTxBuilderServer) GetBalance(context.Context, *GetBalanceRequest) (*GetBalanceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBalance not implemented")
 }
 func (UnimplementedTxBuilderServer) mustEmbedUnimplementedTxBuilderServer() {}
 func (UnimplementedTxBuilderServer) testEmbeddedByValue()                   {}
@@ -290,6 +308,24 @@ func _TxBuilder_TxBroadcast_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TxBuilder_GetBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBalanceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TxBuilderServer).GetBalance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TxBuilder_GetBalance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TxBuilderServer).GetBalance(ctx, req.(*GetBalanceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TxBuilder_ServiceDesc is the grpc.ServiceDesc for TxBuilder service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -320,6 +356,10 @@ var TxBuilder_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TxBroadcast",
 			Handler:    _TxBuilder_TxBroadcast_Handler,
+		},
+		{
+			MethodName: "GetBalance",
+			Handler:    _TxBuilder_GetBalance_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

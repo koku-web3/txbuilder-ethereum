@@ -232,6 +232,28 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 | success | bool | 广播是否成功 |
 | tx_hash | string | 交易哈希，广播成功后返回 |
 
+### 7. GetBalance
+
+查询指定地址的主链币或代币余额。
+
+```protobuf
+rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+```
+
+**请求：**
+
+| 字段       | 类型     | 说明                                      |
+| -------- | ------ | --------------------------------------- |
+| trace_id | string | 追踪 ID（必填，1-36 字符）                        |
+| address  | string | 查询余额的地址（必填，1-256 字符，0x 开头）            |
+| contract | string | 代币合约地址（非必填，1-256 字符；空串表示查询主链币 ETH） |
+
+**响应：**
+
+| 字段    | 类型     | 说明                                        |
+| ----- | ------ | ----------------------------------------- |
+| amount | string | 余额（纯数字字符串，单位为最小单位，如以太坊为 wei）    |
+
 ## 配置
 
 默认配置文件：`config/config.toml`

@@ -858,6 +858,111 @@ func (x *TxBroadcastResponse) GetTxHash() string {
 	return ""
 }
 
+// GetBalance
+type GetBalanceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"` // 1-36 必填
+	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`                // 1-256 必填；需要查询的地址
+	Contract      string                 `protobuf:"bytes,3,opt,name=contract,proto3" json:"contract,omitempty"`              // 1-256 非必填；查询合约代币余额。如果空串表示查询主链币余额
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBalanceRequest) Reset() {
+	*x = GetBalanceRequest{}
+	mi := &file_grpc_txbuilder_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBalanceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBalanceRequest) ProtoMessage() {}
+
+func (x *GetBalanceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_txbuilder_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBalanceRequest.ProtoReflect.Descriptor instead.
+func (*GetBalanceRequest) Descriptor() ([]byte, []int) {
+	return file_grpc_txbuilder_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetBalanceRequest) GetTraceId() string {
+	if x != nil {
+		return x.TraceId
+	}
+	return ""
+}
+
+func (x *GetBalanceRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *GetBalanceRequest) GetContract() string {
+	if x != nil {
+		return x.Contract
+	}
+	return ""
+}
+
+type GetBalanceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Amount        string                 `protobuf:"bytes,1,opt,name=amount,proto3" json:"amount,omitempty"` // 单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBalanceResponse) Reset() {
+	*x = GetBalanceResponse{}
+	mi := &file_grpc_txbuilder_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBalanceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBalanceResponse) ProtoMessage() {}
+
+func (x *GetBalanceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_txbuilder_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBalanceResponse.ProtoReflect.Descriptor instead.
+func (*GetBalanceResponse) Descriptor() ([]byte, []int) {
+	return file_grpc_txbuilder_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetBalanceResponse) GetAmount() string {
+	if x != nil {
+		return x.Amount
+	}
+	return ""
+}
+
 var File_grpc_txbuilder_proto protoreflect.FileDescriptor
 
 const file_grpc_txbuilder_proto_rawDesc = "" +
@@ -917,14 +1022,22 @@ const file_grpc_txbuilder_proto_rawDesc = "" +
 	"\braw_data\x18\x02 \x01(\tR\arawData\x12\x1c\n" +
 	"\tsignature\x18\x03 \x01(\tR\tsignature\".\n" +
 	"\x13TxBroadcastResponse\x12\x17\n" +
-	"\atx_hash\x18\x01 \x01(\tR\x06txHash2\xbc\x04\n" +
+	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"d\n" +
+	"\x11GetBalanceRequest\x12\x19\n" +
+	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1a\n" +
+	"\bcontract\x18\x03 \x01(\tR\bcontract\",\n" +
+	"\x12GetBalanceResponse\x12\x16\n" +
+	"\x06amount\x18\x01 \x01(\tR\x06amount2\x87\x05\n" +
 	"\tTxBuilder\x12U\n" +
 	"\x0eConvertAddress\x12 .txbuilder.ConvertAddressRequest\x1a!.txbuilder.ConvertAddressResponse\x12R\n" +
 	"\rVerifyAddress\x12\x1f.txbuilder.VerifyAddressRequest\x1a .txbuilder.VerifyAddressResponse\x12j\n" +
 	"\x15VerifyContractAddress\x12'.txbuilder.VerifyContractAddressRequest\x1a(.txbuilder.VerifyContractAddressResponse\x12m\n" +
 	"\x16CheckSufficientBalance\x12(.txbuilder.CheckSufficientBalanceRequest\x1a).txbuilder.CheckSufficientBalanceResponse\x12[\n" +
 	"\x10BuildSignRawData\x12\".txbuilder.BuildSignRawDataRequest\x1a#.txbuilder.BuildSignRawDataResponse\x12L\n" +
-	"\vTxBroadcast\x12\x1d.txbuilder.TxBroadcastRequest\x1a\x1e.txbuilder.TxBroadcastResponseB<Z:github.com/koku-web3/go-koku/pkg/proto/txbuilder;txbuilderb\x06proto3"
+	"\vTxBroadcast\x12\x1d.txbuilder.TxBroadcastRequest\x1a\x1e.txbuilder.TxBroadcastResponse\x12I\n" +
+	"\n" +
+	"GetBalance\x12\x1c.txbuilder.GetBalanceRequest\x1a\x1d.txbuilder.GetBalanceResponseB<Z:github.com/koku-web3/go-koku/pkg/proto/txbuilder;txbuilderb\x06proto3"
 
 var (
 	file_grpc_txbuilder_proto_rawDescOnce sync.Once
@@ -938,7 +1051,7 @@ func file_grpc_txbuilder_proto_rawDescGZIP() []byte {
 	return file_grpc_txbuilder_proto_rawDescData
 }
 
-var file_grpc_txbuilder_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_grpc_txbuilder_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_grpc_txbuilder_proto_goTypes = []any{
 	(*RequestWithTraceId)(nil),             // 0: txbuilder.RequestWithTraceId
 	(*VerifyAddressRequest)(nil),           // 1: txbuilder.VerifyAddressRequest
@@ -955,6 +1068,8 @@ var file_grpc_txbuilder_proto_goTypes = []any{
 	(*BuildSignRawDataResponse)(nil),       // 12: txbuilder.BuildSignRawDataResponse
 	(*TxBroadcastRequest)(nil),             // 13: txbuilder.TxBroadcastRequest
 	(*TxBroadcastResponse)(nil),            // 14: txbuilder.TxBroadcastResponse
+	(*GetBalanceRequest)(nil),              // 15: txbuilder.GetBalanceRequest
+	(*GetBalanceResponse)(nil),             // 16: txbuilder.GetBalanceResponse
 }
 var file_grpc_txbuilder_proto_depIdxs = []int32{
 	6,  // 0: txbuilder.ConvertAddressRequest.keys:type_name -> txbuilder.PublicKeysRequest
@@ -965,14 +1080,16 @@ var file_grpc_txbuilder_proto_depIdxs = []int32{
 	9,  // 5: txbuilder.TxBuilder.CheckSufficientBalance:input_type -> txbuilder.CheckSufficientBalanceRequest
 	11, // 6: txbuilder.TxBuilder.BuildSignRawData:input_type -> txbuilder.BuildSignRawDataRequest
 	13, // 7: txbuilder.TxBuilder.TxBroadcast:input_type -> txbuilder.TxBroadcastRequest
-	7,  // 8: txbuilder.TxBuilder.ConvertAddress:output_type -> txbuilder.ConvertAddressResponse
-	2,  // 9: txbuilder.TxBuilder.VerifyAddress:output_type -> txbuilder.VerifyAddressResponse
-	4,  // 10: txbuilder.TxBuilder.VerifyContractAddress:output_type -> txbuilder.VerifyContractAddressResponse
-	10, // 11: txbuilder.TxBuilder.CheckSufficientBalance:output_type -> txbuilder.CheckSufficientBalanceResponse
-	12, // 12: txbuilder.TxBuilder.BuildSignRawData:output_type -> txbuilder.BuildSignRawDataResponse
-	14, // 13: txbuilder.TxBuilder.TxBroadcast:output_type -> txbuilder.TxBroadcastResponse
-	8,  // [8:14] is the sub-list for method output_type
-	2,  // [2:8] is the sub-list for method input_type
+	15, // 8: txbuilder.TxBuilder.GetBalance:input_type -> txbuilder.GetBalanceRequest
+	7,  // 9: txbuilder.TxBuilder.ConvertAddress:output_type -> txbuilder.ConvertAddressResponse
+	2,  // 10: txbuilder.TxBuilder.VerifyAddress:output_type -> txbuilder.VerifyAddressResponse
+	4,  // 11: txbuilder.TxBuilder.VerifyContractAddress:output_type -> txbuilder.VerifyContractAddressResponse
+	10, // 12: txbuilder.TxBuilder.CheckSufficientBalance:output_type -> txbuilder.CheckSufficientBalanceResponse
+	12, // 13: txbuilder.TxBuilder.BuildSignRawData:output_type -> txbuilder.BuildSignRawDataResponse
+	14, // 14: txbuilder.TxBuilder.TxBroadcast:output_type -> txbuilder.TxBroadcastResponse
+	16, // 15: txbuilder.TxBuilder.GetBalance:output_type -> txbuilder.GetBalanceResponse
+	9,  // [9:16] is the sub-list for method output_type
+	2,  // [2:9] is the sub-list for method input_type
 	2,  // [2:2] is the sub-list for extension type_name
 	2,  // [2:2] is the sub-list for extension extendee
 	0,  // [0:2] is the sub-list for field type_name
@@ -989,7 +1106,7 @@ func file_grpc_txbuilder_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_grpc_txbuilder_proto_rawDesc), len(file_grpc_txbuilder_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

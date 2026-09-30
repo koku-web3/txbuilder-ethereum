@@ -4,25 +4,28 @@ package txbuilder;
 
 option go_package = "github.com/koku-web3/go-koku/pkg/proto/txbuilder;txbuilder";
 
-// TxBuilder service provides transaction construction APIs
+// TxBuilder 服务提供交易构建相关的 API
 service TxBuilder {
-  // Convert PEM-encoded public keys to Ethereum addresses
+  // 将 PEM 编码的公钥转换为以太坊地址
   rpc ConvertAddress(ConvertAddressRequest) returns (ConvertAddressResponse);
 
-  // Verify if an address is valid
+  // 验证一个地址是否有效
   rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
 
-  // Verify if a contract address is valid
+  // 验证一个合约地址是否有效
   rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractAddressResponse);
 
-  // Check if the balance is sufficient for a transfer
+  // 检查余额是否足够进行转账
   rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficientBalanceResponse);
 
-  // Build unsigned transaction raw data for signing
+  // 构建用于签名的未签名交易原始数据
   rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse);
 
-  // Broadcast a signed transaction to the network
+  // 广播已签名交易到网络
   rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
+
+  // 查询余额
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
 }
 
 // Common request with trace ID
@@ -113,4 +116,15 @@ message TxBroadcastRequest {
 
 message TxBroadcastResponse {
   string tx_hash = 1; // 交易哈希，广播成功后返回
+}
+
+// GetBalance
+message GetBalanceRequest {
+  string trace_id = 1; // 1-36 必填
+  string address = 2; // 1-256 必填；需要查询的地址
+  string contract = 3; // 1-256 非必填；查询合约代币余额。如果空串表示查询主链币余额
+}
+
+message GetBalanceResponse {
+  string amount = 1; // 单位是最小该链单位，如：以太坊单位就是wei；波场单位就是sun
 }

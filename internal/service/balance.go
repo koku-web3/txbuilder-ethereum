@@ -38,7 +38,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 		return nil, errors.InvalidArgument("amount")
 	}
 
-	balance, err := s.getBasicCoinBalance(ctx, req.FromAddress)
+	balance, err := s.rpc.GetBalance(ctx, req.FromAddress)
 	if err != nil {
 		log.Error("Failed to get balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "error", err)
 		return nil, errors.Internal()
@@ -77,7 +77,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	// Token 转账：只需检查 ETH 余额是否足够支付 Gas
 	isCoinSufficient := balance.Cmp(fee) >= 0
 
-	tokenBalance, err := s.getTokenBalance(ctx, req.FromAddress, req.Contract)
+	tokenBalance, err := s.rpc.GetTokenBalance(ctx, req.FromAddress, req.Contract)
 	if err != nil {
 		log.Error("Failed to get token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract, "error", err)
 		return nil, errors.Internal()
@@ -87,8 +87,35 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	isTokenSufficient := tokenBalance.Cmp(amountInt) >= 0
 
 	log.Info("CheckSufficientBalance Token balance success", "trace_id", req.TraceId, "token_balance", tokenBalance.String(), "required_amount", amountInt.String(), "is_coin_sufficient", isCoinSufficient, "is_token_sufficient", isTokenSufficient)
-
 	return &txbuilder.CheckSufficientBalanceResponse{IsCoinSufficient: isCoinSufficient, IsTokenSufficient: isTokenSufficient}, nil
+}
+
+// GetBalance 获取指定地址的主链币余额/合约代币余额
+func (s *TxBuilderService) GetBalance(ctx context.Context, req *txbuilder.GetBalanceRequest) (*txbuilder.GetBalanceResponse, error) {
+	log.Debug("GetBalance received", "trace_id", req.TraceId, "address", req.Address, "contract", req.Contract)
+
+	if !ethereum.ValidateAddress(req.Address) {
+		log.Warn("Invalid address", "trace_id", req.TraceId, "address", req.Address)
+		return nil, errors.InvalidArgument("address")
+	}
+
+	var balance *big.Int
+	var err error
+	if params.IsContractOpt(req.Contract) {
+		if !ethereum.ValidateContractAddress(req.Contract) {
+			log.Warn("Invalid contract", "trace_id", req.TraceId, "contract", req.Contract)
+			return nil, errors.InvalidArgument("contract")
+		}
+		balance, err = s.rpc.GetTokenBalance(ctx, req.Address, req.Contract)
+	} else {
+		balance, err = s.rpc.GetBalance(ctx, req.Address)
+	}
+	if err != nil {
+		log.Error("Get balance failed", "trace_id", req.TraceId, "error", err)
+		return nil, errors.Internal()
+	}
+	log.Info("Get balance success!", "trace_id", req.TraceId, "address", req.Address, "contract", req.Contract, "balance_amount", balance.String())
+	return &txbuilder.GetBalanceResponse{Amount: balance.String()}, nil
 }
 
 func (*TxBuilderService) validateCheckSufficientBalance(req *txbuilder.CheckSufficientBalanceRequest) error {
