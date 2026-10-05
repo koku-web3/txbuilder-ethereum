@@ -1,0 +1,15 @@
+services:
+  txbuilder-ethereum:
+    container_name: txbuilder-ethereum
+    image: ghcr.io/koku-web3/txbuilder-ethereum:${IMAGE_TAG:-latest}
+    ports:
+      - "51051:51051"
+    volumes:
+      - ./config/config.prod.toml:/app/config/config.prod.toml:ro
+    restart: unless-stopped
+    networks:
+      - koku-net
+
+networks:
+  koku-net:
+    external: true

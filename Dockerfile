@@ -7,6 +7,10 @@ RUN apk add --no-cache git ca-certificates
 # Set working directory
 WORKDIR /app
 
+# Build arguments (default mirrors for China, override in CI to proxy.golang.org)
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
+
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
@@ -47,10 +51,6 @@ USER appuser
 # Expose gRPC port
 EXPOSE 51051
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:51051/Health || exit 1
-
 # Run the application
 ENTRYPOINT ["./txbuilder-ethereum"]
-CMD ["-config", "/app/config/config.toml"]
+CMD ["-config", "/app/config/config.docker.toml"]

@@ -8,17 +8,11 @@ services:
     ports:
       - "51051:51051"
     volumes:
-      - ./config:/app/config:rw
+      - ./config/config.docker.toml:/app/config/config.docker.toml:ro
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "51051"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     networks:
-      - txbuilder-network
+      - koku-net
 
 networks:
-  txbuilder-network:
-    driver: bridge
+  koku-net:
+    external: true   # 加入外部网络 koku-net

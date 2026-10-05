@@ -219,11 +219,12 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 
 **请求：**
 
-| 字段       | 类型     | 说明                         |
-| -------- | ------ | -------------------------- |
-| trace_id | string | 追踪 ID（必填）                   |
-| raw_data | string | 已签名 RLP 编码交易（十六进制字符串，1-4096 字符）   |
-| signature | string | 外部传入的签名数据，格式为 R + S + V（V 只有 0 或 1，表示 R.y 坐标的奇偶性） |
+| 字段          | 类型     | 说明                         |
+| ----------- | ------ | -------------------------- |
+| trace_id    | string | 追踪 ID（必填）                   |
+| raw_data    | string | 已签名 RLP 编码交易（十六进制字符串，1-4096 字符）   |
+| signature   | string | 外部传入的签名数据，格式为 R + S + V（V 只有 0 或 1，表示 R.y 坐标的奇偶性） |
+| from_address | string | 交易发起地址（必填，1-256 字符）。用于校验签名恢复出的地址是否一致 |
 
 **响应：**
 
@@ -231,6 +232,24 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 | ------- | ---- | ------- |
 | success | bool | 广播是否成功 |
 | tx_hash | string | 交易哈希，广播成功后返回 |
+
+**签名发起方校验（重要）：**
+
+服务在广播前会用 `types.Sender` 从签名中反推交易发起方，并与 `from_address` 比对，不一致则直接拒绝并返回 `InvalidArgument`：
+
+```text
+signature does not match from_address: signature recovers to 0x..., but from_address is 0x...
+```
+
+之所以必须做这一步：`WithSignature` 只组装 R/S/V，**不验证签名是否真的对应这笔交易的哈希**。若外部（Coordinator/KMS）签署的是错误的摘要（例如把 `raw_data` 而非 `msg` 送进签名，或对字符串而非 32 字节做了额外哈希），`ecrecover` 依然会成功，但恢复出的是另一个无关地址。若不加拦截，请求会飘到节点并被报成极易误导的：
+
+```text
+insufficient funds for gas * price + value: balance 0, tx cost ..., overshot ...
+```
+
+因为那个被误恢复出来的地址余额恰好为 0。**看到这个报错时，第一反应应当是签名摘要错配，而不是账户没钱。**
+
+`from_address` 使用 `strings.EqualFold` 比对，因此 EIP-55 校验和格式与全小写写法均可。
 
 ### 7. GetBalance
 
@@ -331,10 +350,12 @@ grpcurl -plaintext -d '{
 # 响应示例: {"msg": "...", "raw_data": "..."}
 
 # 广播已签名的交易（raw_data 包含签名）
+# 注意：from_address 必填，必须是实际签署者的地址，否则会被签名校验拒绝
 grpcurl -plaintext -d '{
   "trace_id": "broadcast-001",
   "raw_data": "0xf86c018504a817c80082520894d8da6bf26964af9d7eed9e03e53415d37aa960458088016345785d8a0000801ca0798c92bfb0d1dfccba6f0912a8f03d9e1bdfef5ee3de0bd67c7c5b97425d38b6",
-  "signature": ""
+  "signature": "",
+  "from_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
 }' localhost:51051 txbuilder.TxBuilder/TxBroadcast
 ```
 
@@ -420,16 +441,19 @@ golangci-lint run ./...
 
 
 ### Docker 部署
-前置条件:
+
+#### 前置条件
 
 - Docker 20.10+
 - Docker Compose v2.0+
 
-#### 快速启动
+#### 本地开发
+
+使用 `docker-compose.yml`（含 `build:` 块），代码变更后重新编译并启动：
 
 ```bash
 # 构建并启动服务
-docker compose up -d
+docker compose up -d --build
 
 # 查看服务状态
 docker compose ps
@@ -438,38 +462,68 @@ docker compose ps
 docker compose logs -f
 ```
 
+#### 服务器生产部署
+
+使用 `docker-compose.prod.yml`（无 `build:` 块），镜像从 GHCR 拉取：
+
+```bash
+# 拉取最新版本并启动
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
+# 指定版本（回滚）
+IMAGE_TAG=v1.0.4 docker compose -f docker-compose.prod.yml up -d
+
+# 查看服务状态
+docker compose -f docker-compose.prod.yml ps
+
+# 查看日志
+docker compose -f docker-compose.prod.yml logs -f
+```
+
+首次部署前，需在服务器上创建外部网络：
+
+```bash
+docker network create koku-net
+```
+
 #### 配置说明
 
-配置文件位于 `./config/config.toml`，通过 volume 挂载到容器内 `/app/config` 目录。
+配置文件通过 volume 挂载覆盖镜像内默认配置：
 
-**重要**：默认配置监听 `127.0.0.1:51051`，Docker 部署时需改为监听所有地址：
+- 本地：`./config/config.docker.toml` → 容器内 `/app/config/config.docker.toml`（只读）
+- 生产：`./config/config.prod.toml` → 容器内 `/app/config/config.prod.toml`（只读）
+
+gRPC 必须监听 `0.0.0.0` 以允许外部访问：
 
 ```toml
 [grpc]
-host = "0.0.0.0"  # 改为 0.0.0.0 以允许外部访问
+host = "0.0.0.0"
 port = 51051
 ```
+
+生产配置 `config.prod.toml` 包含敏感信息（生产 RPC URL），**不提交到版本库**，只在服务器上部署。
 
 #### 端口说明
 
 | 端口 | 说明 |
 | ---- | ---- |
-| 51051 | gRPC 服务端口 |
+| 51051 | gRPC 服务端口（明文，外部网络访问请在前面架设 TLS 网关） |
 
 #### 常用命令
 
 ```bash
 # 停止服务
-docker compose down
+docker compose -f docker-compose.prod.yml down
 
-# 重新构建（代码变更后）
-docker compose up -d --build
+# 重新拉取并部署
+docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 
 # 进入容器调试
 docker exec -it txbuilder-ethereum sh
 
 # 查看服务日志
-docker compose logs -f txbuilder-ethereum
+docker compose -f docker-compose.prod.yml logs -f
 ```
 
 #### 测试 gRPC 服务
@@ -482,4 +536,19 @@ grpcurl -plaintext -d '{
   "trace_id": "test-001",
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
 }' localhost:51051 txbuilder.TxBuilder/VerifyAddress
+```
+
+#### 发布新版本
+
+打 tag 触发 GitHub Actions 构建并推送镜像到 GHCR：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+镜像构建完成后，服务器上执行：
+
+```bash
+docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 ```

@@ -1,0 +1,27 @@
+# Git
+.git
+.githooks
+
+# GitHub
+.github
+.vscode
+.cursor
+
+# Docs & AI context (not needed in image)
+ai/
+docs/
+
+# Build artifacts — MUST use leading slash to target root only,
+# otherwise cmd/txbuilder-ethereum/ gets accidentally excluded again.
+/txbuilder-ethereum
+bin/
+__debug_bin
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+
+# Configs that contain secrets and are set up per-environment on the server
+config/config.prod.toml

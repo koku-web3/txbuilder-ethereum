@@ -3,7 +3,12 @@
 __debug_bin
 bin/
 ai/
-txbuilder-ethereum
+/txbuilder-ethereum
+# OS
 .DS_Store
 
+# Logs
 *.log
+
+# Production config (secrets — set up on server, never committed)
+config/config.prod.toml
