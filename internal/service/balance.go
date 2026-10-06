@@ -41,7 +41,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	balance, err := s.rpc.GetBalance(ctx, req.FromAddress)
 	if err != nil {
 		log.Error("Failed to get balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "error", err)
-		return nil, errors.Internal()
+		return nil, errors.Internal("failed to get balance.")
 	}
 
 	var calldata string
@@ -60,7 +60,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	fee, err := s.getEip1559TxFee(ctx, isContract, req.FromAddress, req.Contract, calldata)
 	if err != nil {
 		log.Error("Failed to get EIP-1559 tx fee", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internal()
+		return nil, errors.Internal("failed to get tx fee.")
 	}
 
 	if !isContract {
@@ -80,7 +80,7 @@ func (s *TxBuilderService) CheckSufficientBalance(ctx context.Context, req *txbu
 	tokenBalance, err := s.rpc.GetTokenBalance(ctx, req.FromAddress, req.Contract)
 	if err != nil {
 		log.Error("Failed to get token balance", "trace_id", req.TraceId, "from_address", req.FromAddress, "contract", req.Contract, "error", err)
-		return nil, errors.Internal()
+		return nil, errors.Internal("failed to get token balance.")
 	}
 
 	// amount 已是链上最小单位，与 balanceOf 返回值直接比较
@@ -112,7 +112,7 @@ func (s *TxBuilderService) GetBalance(ctx context.Context, req *txbuilder.GetBal
 	}
 	if err != nil {
 		log.Error("Get balance failed", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internal()
+		return nil, errors.InternalSilent()
 	}
 	log.Info("Get balance success!", "trace_id", req.TraceId, "address", req.Address, "contract", req.Contract, "balance_amount", balance.String())
 	return &txbuilder.GetBalanceResponse{Amount: balance.String()}, nil

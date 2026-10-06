@@ -7,6 +7,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	ServiceName = "txbuilder-ethereum"
+)
+
 // InvalidArgument 表示客户端指定了无效的参数。
 // 注意：此错误码与 FailedPrecondition 不同。InvalidArgument 表示无论系统状态如何，
 // 参数都有问题（如格式错误的文件名）。
@@ -33,8 +37,12 @@ func InvalidArgumentf(format string, a ...any) error {
 // 使用场景：服务器内部发生未预期的错误时返回，如数据库连接失败、
 // 序列化/反序列化错误、系统不变量被破坏等。此错误应谨慎使用，
 // 通常表示服务端代码有 bug。
-func Internal() error {
-	return status.Error(codes.Internal, "")
+func Internal(message string) error {
+	return status.Error(codes.Internal, fmt.Sprintf("%s: %s", ServiceName, message))
+}
+
+func InternalSilent() error {
+	return status.Error(codes.Internal, fmt.Sprintf("%s internal error", ServiceName))
 }
 
 // NotFound 表示请求的实体（例如文件或目录）未找到。

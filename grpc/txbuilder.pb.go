@@ -758,7 +758,10 @@ type TxBroadcastRequest struct {
 	RawData string                 `protobuf:"bytes,2,opt,name=raw_data,json=rawData,proto3" json:"raw_data,omitempty"` // 原始交易数据 (hex 编码)
 	// 长度 65 个字节
 	// 外部传入的签名数据，格式为 R（32字节） + S （32字节）+ V (V 1个字节，只有 0 或 1，表示 R.y 坐标的奇偶性)
-	Signature     string `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	Signature string `protobuf:"bytes,3,opt,name=signature,proto3" json:"signature,omitempty"`
+	// 1-256 必填；转账发起地址
+	// 用于校验 signature 恢复出的地址是否与预期一致，防止签名错配后广播出他人账户的交易
+	FromAddress   string `protobuf:"bytes,4,opt,name=from_address,json=fromAddress,proto3" json:"from_address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -810,6 +813,13 @@ func (x *TxBroadcastRequest) GetRawData() string {
 func (x *TxBroadcastRequest) GetSignature() string {
 	if x != nil {
 		return x.Signature
+	}
+	return ""
+}
+
+func (x *TxBroadcastRequest) GetFromAddress() string {
+	if x != nil {
+		return x.FromAddress
 	}
 	return ""
 }
@@ -1016,11 +1026,12 @@ const file_grpc_txbuilder_proto_rawDesc = "" +
 	"\bcontract\x18\b \x01(\tR\bcontract\"G\n" +
 	"\x18BuildSignRawDataResponse\x12\x10\n" +
 	"\x03msg\x18\x01 \x01(\tR\x03msg\x12\x19\n" +
-	"\braw_data\x18\x02 \x01(\tR\arawData\"h\n" +
+	"\braw_data\x18\x02 \x01(\tR\arawData\"\x8b\x01\n" +
 	"\x12TxBroadcastRequest\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12\x19\n" +
 	"\braw_data\x18\x02 \x01(\tR\arawData\x12\x1c\n" +
-	"\tsignature\x18\x03 \x01(\tR\tsignature\".\n" +
+	"\tsignature\x18\x03 \x01(\tR\tsignature\x12!\n" +
+	"\ffrom_address\x18\x04 \x01(\tR\vfromAddress\".\n" +
 	"\x13TxBroadcastResponse\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\"d\n" +
 	"\x11GetBalanceRequest\x12\x19\n" +

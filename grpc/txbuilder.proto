@@ -112,6 +112,9 @@ message TxBroadcastRequest {
   // 长度 65 个字节
   // 外部传入的签名数据，格式为 R（32字节） + S （32字节）+ V (V 1个字节，只有 0 或 1，表示 R.y 坐标的奇偶性)
   string signature = 3;
+  // 1-256 必填；转账发起地址
+  // 用于校验 signature 恢复出的地址是否与预期一致，防止签名错配后广播出他人账户的交易
+  string from_address = 4;
 }
 
 message TxBroadcastResponse {

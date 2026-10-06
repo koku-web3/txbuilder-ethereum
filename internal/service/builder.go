@@ -48,9 +48,14 @@ func (s *TxBuilderService) BuildSignRawData(ctx context.Context, req *txbuilder.
 		msg, rawData, err = s.buildBasicCoinTransaction(ctx, req.FromAddress, req.ToAddress, req.Amount)
 	}
 
+	if len(msg) != 64 {
+		log.Error("Message Hash length invalid", "trace_id", req.TraceId, "expect_length", "64", "actual_length", len(msg), "msg", msg)
+		return nil, errors.Internal("length of message invalid.")
+	}
+
 	if err != nil {
 		log.Error("Failed to build transaction", "trace_id", req.TraceId, "error", err)
-		return nil, errors.Internal()
+		return nil, errors.Internal("failed to build transaction.")
 	}
 
 	log.Info("Build raw data of signing success", "trace_id", req.TraceId, "msg", msg, "raw_data", rawData)
