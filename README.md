@@ -7,6 +7,7 @@ Ethereum 区块链交易构造 gRPC 服务，提供地址验证、余额检查�
 ![服务架构示意图](docs/images/txbuilder-architecture.png)
 
 **职责说明**：
+
 - **txbuilder-ethereum**：负责 Ethereum 区块链的所有细节（EIP-1559 交易构造、RLP 编码、JSON-RPC 调用）
 - **Coordinator**：只需调用接口构造交易、调用 KMS 请求签名、调用广播
 
@@ -35,6 +36,8 @@ txbuilder-ethereum/
 └── .golangci.yml           # linter 配置
 ```
 
+
+
 ## gRPC 返回值
 
 所有 gRPC 接口均使用标准 gRPC 状态码作为返回值。错误响应格式为：
@@ -47,12 +50,18 @@ txbuilder-ethereum/
 }
 ```
 
+
+
 ### 错误码说明
 
-| 错误码 | 名称 | 说明 |
-| ----- | ---- | ---- |
-| 3 | `InvalidArgument` | 客户端传入的参数无效，如格式错误、缺少必需参数 |
-| 13 | `Internal` | 服务端内部错误，通常表示代码 bug |
+
+| 错误码 | 名称                | 说明                      |
+| --- | ----------------- | ----------------------- |
+| 3   | `InvalidArgument` | 客户端传入的参数无效，如格式错误、缺少必需参数 |
+| 13  | `Internal`        | 服务端内部错误，通常表示代码 bug      |
+
+
+
 
 ### InvalidArgument 返回场景
 
@@ -62,12 +71,15 @@ txbuilder-ethereum/
 - `address` 格式不正确（非 `0x` 开头、非 40 位十六进制）
 - `amount` 格式错误（非数字字符串）
 
+
+
 ### Internal 返回场景
 
 当服务端处理请求时发生内部错误：
 
 - RPC 调用失败（节点连接问题）
 - 序列化/反序列化错误
+
 
 
 ## gRPC 接口
@@ -79,6 +91,7 @@ txbuilder-ethereum/
 验证 Ethereum 地址（`0x` 前缀 + 40 个十六进制字符），支持 EIP-55 校验和格式验证。
 
 **验证规则：**
+
 - 如果地址是 EIP-55 格式（混合大小写），则验证校验和是否正确
 - 如果地址是纯小写或纯大写，则只验证基本格式
 
@@ -88,16 +101,22 @@ rpc VerifyAddress(VerifyAddressRequest) returns (VerifyAddressResponse);
 
 **请求：**
 
-| 字段       | 类型     | 说明        |
-| -------- | ------ | --------- |
-| trace_id | string | 追踪 ID（必填） |
-| address  | string | Ethereum 地址   |
+
+| 字段       | 类型     | 说明          |
+| -------- | ------ | ----------- |
+| trace_id | string | 追踪 ID（必填）   |
+| address  | string | Ethereum 地址 |
+
 
 **响应：**
+
 
 | 字段       | 类型   | 说明     |
 | -------- | ---- | ------ |
 | is_valid | bool | 地址是否合法 |
+
+
+
 
 ### 2. VerifyContractAddress
 
@@ -109,16 +128,22 @@ rpc VerifyContractAddress(VerifyContractAddressRequest) returns (VerifyContractA
 
 **请求：**
 
+
 | 字段       | 类型     | 说明        |
 | -------- | ------ | --------- |
 | trace_id | string | 追踪 ID（必填） |
 | address  | string | 合约地址      |
 
+
 **响应：**
+
 
 | 字段       | 类型   | 说明     |
 | -------- | ---- | ------ |
 | is_valid | bool | 地址是否合法 |
+
+
+
 
 ### 3. ConvertAddress
 
@@ -130,30 +155,40 @@ rpc ConvertAddress(ConvertAddressRequest) returns (ConvertAddressResponse);
 
 **请求：**
 
-| 字段       | 类型     | 说明        |
-| -------- | ------ | --------- |
-| trace_id | string | 追踪 ID（必填，1-36 字符） |
-| keys | repeated PublicKeysRequest | 公钥列表（必填，最多 100 条） |
+
+| 字段       | 类型                         | 说明                |
+| -------- | -------------------------- | ----------------- |
+| trace_id | string                     | 追踪 ID（必填，1-36 字符） |
+| keys     | repeated PublicKeysRequest | 公钥列表（必填，最多 100 条） |
+
 
 **PublicKeysRequest：**
 
-| 字段           | 类型     | 说明                   |
-| ------------ | ------ | -------------------- |
-| account_index | uint32 | 账户索引（原样透传）         |
+
+| 字段              | 类型     | 说明                               |
+| --------------- | ------ | -------------------------------- |
+| account_index   | uint32 | 账户索引（原样透传）                       |
 | pkix_pubkey_pem | string | PKIX 标准的公钥 PEM 格式（必填，最多 4096 字符） |
+
 
 **响应：**
 
-| 字段    | 类型                          | 说明     |
-| ----- | --------------------------- | ------ |
-| keys  | repeated PublicKeysResponse | 转换结果列表 |
+
+| 字段   | 类型                          | 说明     |
+| ---- | --------------------------- | ------ |
+| keys | repeated PublicKeysResponse | 转换结果列表 |
+
 
 **PublicKeysResponse：**
 
-| 字段          | 类型     | 说明                       |
-| ----------- | ------ | ------------------------ |
-| account_index | uint32 | 账户索引（与请求对应）            |
-| address      | string | Ethereum 地址（`0x` + 40 hex，含 EIP-55） |
+
+| 字段            | 类型     | 说明                                  |
+| ------------- | ------ | ----------------------------------- |
+| account_index | uint32 | 账户索引（与请求对应）                         |
+| address       | string | Ethereum 地址（`0x` + 40 hex，含 EIP-55） |
+
+
+
 
 ### 4. CheckSufficientBalance
 
@@ -165,21 +200,27 @@ rpc CheckSufficientBalance(CheckSufficientBalanceRequest) returns (CheckSufficie
 
 **请求：**
 
-| 字段            | 类型     | 说明                                     |
-| ------------- | ------ | -------------------------------------- |
-| trace_id   | string | 追踪 ID（必填，1-36 字符）                       |
-| chain_code | string | 链码（必填，1-36 字符），如 "ethereum"、"sepolia"      |
-| coin       | string | 币种 ID（必填，1-36 字符）                       |
-| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）                |
-| amount       | string | 转账金额（必填，纯数字字符串，单位为 wei）              |
-| contract     | string | 代币合约地址（非必填，1-256 字符；空串表示主链币 ETH） |
+
+| 字段           | 类型     | 说明                                    |
+| ------------ | ------ | ------------------------------------- |
+| trace_id     | string | 追踪 ID（必填，1-36 字符）                     |
+| chain_code   | string | 链码（必填，1-36 字符），如 "ethereum"、"sepolia" |
+| coin         | string | 币种 ID（必填，1-36 字符）                     |
+| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）              |
+| amount       | string | 转账金额（必填，纯数字字符串，单位为 wei）               |
+| contract     | string | 代币合约地址（非必填，1-256 字符；空串表示主链币 ETH）      |
+
 
 **响应：**
 
-| 字段                 | 类型   | 说明                                                                 |
-| ------------------ | ---- | ------------------------------------------------------------------ |
-| is_coin_sufficient | bool | 主链币（如 ETH）余额是否足够转账                                       |
-| is_token_sufficient | bool | 代币余额是否足够（当 contract 非空时需要同时判断两个字段）                  |
+
+| 字段                  | 类型   | 说明                                 |
+| ------------------- | ---- | ---------------------------------- |
+| is_coin_sufficient  | bool | 主链币（如 ETH）余额是否足够转账                 |
+| is_token_sufficient | bool | 代币余额是否足够（当 contract 非空时需要同时判断两个字段） |
+
+
+
 
 ### 5. BuildSignRawData
 
@@ -191,23 +232,29 @@ rpc BuildSignRawData(BuildSignRawDataRequest) returns (BuildSignRawDataResponse)
 
 **请求：**
 
-| 字段            | 类型     | 说明                                |
-| ------------- | ------ | --------------------------------- |
-| trace_id     | string | 业务追踪 ID（必填，1-36 字符）                      |
-| chain_code   | string | 链码（必填，1-36 字符）                           |
-| coin         | string | 币种 ID（必填，1-36 字符）                       |
-| coin_symbol  | string | 代币符号（必填，1-36 字符）                       |
-| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）                |
-| to_address   | string | 接收方地址（必填，1-256 字符，0x 开头）                |
-| amount       | string | 金额（必填，纯数字字符串，单位为 wei）                  |
+
+| 字段           | 类型     | 说明                               |
+| ------------ | ------ | -------------------------------- |
+| trace_id     | string | 业务追踪 ID（必填，1-36 字符）              |
+| chain_code   | string | 链码（必填，1-36 字符）                   |
+| coin         | string | 币种 ID（必填，1-36 字符）                |
+| coin_symbol  | string | 代币符号（必填，1-36 字符）                 |
+| from_address | string | 发送方地址（必填，1-256 字符，0x 开头）         |
+| to_address   | string | 接收方地址（必填，1-256 字符，0x 开头）         |
+| amount       | string | 金额（必填，纯数字字符串，单位为 wei）            |
 | contract     | string | 代币合约地址（非必填，1-256 字符；空串表示主链币 ETH） |
+
 
 **响应：**
 
-| 字段      | 类型     | 说明                                        |
-| ------- | ------ | ----------------------------------------- |
-| msg     | string | Keccak-256 哈希（十六进制字符串，EIP-1559 签名消息）    |
+
+| 字段       | 类型     | 说明                                          |
+| -------- | ------ | ------------------------------------------- |
+| msg      | string | Keccak-256 哈希（十六进制字符串，EIP-1559 签名消息）        |
 | raw_data | string | 未签名 RLP 编码交易（十六进制字符串），由 Coordinator 签名后用于广播 |
+
+
+
 
 ### 6. TxBroadcast
 
@@ -219,19 +266,23 @@ rpc TxBroadcast(TxBroadcastRequest) returns (TxBroadcastResponse);
 
 **请求：**
 
-| 字段          | 类型     | 说明                         |
-| ----------- | ------ | -------------------------- |
-| trace_id    | string | 追踪 ID（必填）                   |
-| raw_data    | string | 已签名 RLP 编码交易（十六进制字符串，1-4096 字符）   |
-| signature   | string | 外部传入的签名数据，格式为 R + S + V（V 只有 0 或 1，表示 R.y 坐标的奇偶性） |
-| from_address | string | 交易发起地址（必填，1-256 字符）。用于校验签名恢复出的地址是否一致 |
+
+| 字段           | 类型     | 说明                                                |
+| ------------ | ------ | ------------------------------------------------- |
+| trace_id     | string | 追踪 ID（必填）                                         |
+| raw_data     | string | 已签名 RLP 编码交易（十六进制字符串，1-4096 字符）                   |
+| signature    | string | 外部传入的签名数据，格式为 R + S + V（V 只有 0 或 1，表示 R.y 坐标的奇偶性） |
+| from_address | string | 交易发起地址（必填，1-256 字符）。用于校验签名恢复出的地址是否一致              |
+
 
 **响应：**
 
-| 字段      | 类型   | 说明      |
-| ------- | ---- | ------- |
-| success | bool | 广播是否成功 |
+
+| 字段      | 类型     | 说明           |
+| ------- | ------ | ------------ |
+| success | bool   | 广播是否成功       |
 | tx_hash | string | 交易哈希，广播成功后返回 |
+
 
 **签名发起方校验（重要）：**
 
@@ -261,17 +312,23 @@ rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
 
 **请求：**
 
-| 字段       | 类型     | 说明                                      |
-| -------- | ------ | --------------------------------------- |
-| trace_id | string | 追踪 ID（必填，1-36 字符）                        |
-| address  | string | 查询余额的地址（必填，1-256 字符，0x 开头）            |
+
+| 字段       | 类型     | 说明                                 |
+| -------- | ------ | ---------------------------------- |
+| trace_id | string | 追踪 ID（必填，1-36 字符）                  |
+| address  | string | 查询余额的地址（必填，1-256 字符，0x 开头）         |
 | contract | string | 代币合约地址（非必填，1-256 字符；空串表示查询主链币 ETH） |
+
 
 **响应：**
 
-| 字段    | 类型     | 说明                                        |
-| ----- | ------ | ----------------------------------------- |
-| amount | string | 余额（纯数字字符串，单位为最小单位，如以太坊为 wei）    |
+
+| 字段     | 类型     | 说明                           |
+| ------ | ------ | ---------------------------- |
+| amount | string | 余额（纯数字字符串，单位为最小单位，如以太坊为 wei） |
+
+
+
 
 ## 配置
 
@@ -299,7 +356,11 @@ verbosity = 5
 vmodule = ""
 ```
 
+
+
 ## 调用示例
+
+
 
 ### 使用 grpcurl
 
@@ -359,6 +420,8 @@ grpcurl -plaintext -d '{
 }' localhost:51051 txbuilder.TxBuilder/TxBroadcast
 ```
 
+
+
 ### Go 客户端示例
 
 ```go
@@ -411,7 +474,11 @@ func main() {
 }
 ```
 
+
+
 ## 开发
+
+
 
 ### 生成 protobuf 代码
 
@@ -433,6 +500,8 @@ protoc --go_out=. --go_opt=paths=source_relative \
 go test ./...
 ```
 
+
+
 ### 代码检查
 
 ```bash
@@ -440,12 +509,17 @@ golangci-lint run ./...
 ```
 
 
+
 ### Docker 部署
+
+
 
 #### 前置条件
 
 - Docker 20.10+
 - Docker Compose v2.0+
+
+
 
 #### 本地开发
 
@@ -461,6 +535,8 @@ docker compose ps
 # 查看日志
 docker compose logs -f
 ```
+
+
 
 #### 服务器生产部署
 
@@ -487,6 +563,8 @@ docker compose -f docker-compose.prod.yml logs -f
 docker network create koku-net
 ```
 
+
+
 #### 配置说明
 
 配置文件通过 volume 挂载覆盖镜像内默认配置：
@@ -494,21 +572,7 @@ docker network create koku-net
 - 本地：`./config/config.docker.toml` → 容器内 `/app/config/config.docker.toml`（只读）
 - 生产：`./config/config.prod.toml` → 容器内 `/app/config/config.prod.toml`（只读）
 
-gRPC 必须监听 `0.0.0.0` 以允许外部访问：
 
-```toml
-[grpc]
-host = "0.0.0.0"
-port = 51051
-```
-
-生产配置 `config.prod.toml` 包含敏感信息（生产 RPC URL），**不提交到版本库**，只在服务器上部署。
-
-#### 端口说明
-
-| 端口 | 说明 |
-| ---- | ---- |
-| 51051 | gRPC 服务端口（明文，外部网络访问请在前面架设 TLS 网关） |
 
 #### 常用命令
 
@@ -526,6 +590,8 @@ docker exec -it txbuilder-ethereum sh
 docker compose -f docker-compose.prod.yml logs -f
 ```
 
+
+
 #### 测试 gRPC 服务
 
 服务启动后，可使用 grpcurl 测试：
@@ -537,6 +603,8 @@ grpcurl -plaintext -d '{
   "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
 }' localhost:51051 txbuilder.TxBuilder/VerifyAddress
 ```
+
+
 
 #### 发布新版本
 
@@ -552,3 +620,4 @@ git push origin v0.1.0
 ```bash
 docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 ```
+
